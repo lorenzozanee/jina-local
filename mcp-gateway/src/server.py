@@ -37,10 +37,11 @@ try:
         search_images,
         search_jina_blog,
         capture_screenshot_url,
+        embeddings,
     )
 except ImportError:
     try:
-        from gateway import read_url, parallel_read_url, search_web, sort_by_relevance, parallel_search_web, search_web_deep, deduplicate_strings, deduplicate_images, classify_text, expand_query, extract_pdf, guess_datetime_url, primer, search_arxiv, parallel_search_arxiv, search_ssrn, parallel_search_ssrn, search_bibtex, search_images, search_jina_blog, capture_screenshot_url  # type: ignore
+        from gateway import read_url, parallel_read_url, search_web, sort_by_relevance, parallel_search_web, search_web_deep, deduplicate_strings, deduplicate_images, classify_text, expand_query, extract_pdf, guess_datetime_url, primer, search_arxiv, parallel_search_arxiv, search_ssrn, parallel_search_ssrn, search_bibtex, search_images, search_jina_blog, capture_screenshot_url, embeddings  # type: ignore
     except ImportError:  # fallback for direct file execution without package context
         import importlib.util
         import pathlib as _pl
@@ -71,6 +72,7 @@ except ImportError:
         search_images = getattr(_gw, "search_images", None)  # type: ignore
         search_jina_blog = getattr(_gw, "search_jina_blog", None)  # type: ignore
         capture_screenshot_url = getattr(_gw, "capture_screenshot_url", None)  # type: ignore
+        embeddings = getattr(_gw, "embeddings", None)  # type: ignore
         if parallel_read_url is None:
             try:
                 from reader import parallel_read_url as parallel_read_url  # type: ignore
@@ -117,6 +119,10 @@ DEFAULT_PORT = 3000
 
 if FastMCP is not None:
     mcp = FastMCP("jina-local-gateway")
+
+    @mcp.tool()
+    def embeddings_tool(texts: list[str]) -> list[list[float]]:
+        return embeddings(texts)
 
     @mcp.tool()
     def read_url_tool(url: str) -> str:
@@ -293,7 +299,7 @@ if FastMCP is not None:
         "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf",
         "guess_datetime_url", "primer", "search_arxiv", "parallel_search_arxiv", "search_ssrn",
         "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog",
-        "capture_screenshot_url", "mcp", "main", "_parse_args",
+        "capture_screenshot_url", "embeddings_tool", "mcp", "main", "_parse_args",
         "SUPPORTED_TRANSPORTS", "TRANSPORT_CHOICES", "AVAILABLE_TRANSPORTS", "TRANSPORT_ALIASES",
         "DEFAULT_TRANSPORT", "DEFAULT_HOST", "DEFAULT_PORT",
     ]

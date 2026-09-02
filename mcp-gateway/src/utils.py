@@ -114,23 +114,18 @@ def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
     return sim
 
 
-def _get_embeddings(texts: list[str]) -> list[np.ndarray]:
-    """获取 embeddings 向量，复用 embeddings.py"""
-    # lazy import
+def _get_gateway():
     try:
-        from .embeddings import embed as _embed  # type: ignore
+        from . import gateway  # type: ignore
+        return gateway
     except ImportError:
-        try:
-            from embeddings import embed as _embed  # type: ignore
-        except ImportError:
-            import importlib.util
-            p = pathlib.Path(__file__).with_name("embeddings.py")
-            spec = importlib.util.spec_from_file_location("embeddings_local", p)
-            assert spec and spec.loader
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)  # type: ignore
-            _embed = mod.embed  # type: ignore
-    vecs_list = _embed(texts)  # list[list[float]]
+        import gateway  # type: ignore
+        return gateway
+
+
+def _get_embeddings(texts: list[str]) -> list[np.ndarray]:
+    """获取 embeddings 向量，统一经过 Gateway 的 GPU 优先入口"""
+    vecs_list = _get_gateway().embed(texts)
     arrs = [np.array(v, dtype=np.float32) for v in vecs_list]
     # ensure normalized
     for i in range(len(arrs)):
