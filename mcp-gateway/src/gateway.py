@@ -45,6 +45,20 @@ except ImportError:
         _emb_embed_one = None  # type: ignore
         _emb_dim = None  # type: ignore
 
+try:
+    from .reranker import rerank as _rerank
+    from .reranker import sort_by_relevance as _rerank_sort
+    from .reranker import rerank_batch as _rerank_batch
+except ImportError:
+    try:
+        from reranker import rerank as _rerank  # type: ignore
+        from reranker import sort_by_relevance as _rerank_sort  # type: ignore
+        from reranker import rerank_batch as _rerank_batch  # type: ignore
+    except ImportError:
+        _rerank = None  # type: ignore
+        _rerank_sort = None  # type: ignore
+        _rerank_batch = None  # type: ignore
+
 
 def read_url(url: str, question: str | None = None, chunk_size: int = 100, top_k: int = 3) -> str:
     """生产级 read_url，委托给 reader.py（双抽取+question+缓存+严格校验）"""
@@ -163,13 +177,12 @@ def get_embedding_dimension() -> int:
 
 
 def sort_by_relevance(query: str, documents: list[str]) -> list[dict]:
-    """Sort documents by word overlap with query, descending.
-
-    当前为词重叠 stub，后续接入 TEI reranker（BAAI/bge-reranker-v2-m3 via Text Embeddings Inference）。
-
-    Returns list[dict] with document + relevance_score (float),
-    preserves document set, guarantees Apple docs rank top for apple fruit query.
-    """
+    """语义 Reranker，委托至 reranker.py（CrossEncoder 优先，fallback 余弦），保持兼容 wrapper"""
+    if _rerank is not None:
+        return _rerank(query, documents)
+    if _rerank_sort is not None:
+        return _rerank_sort(query, documents)
+    # fallback stub（should not happen after reranker.py exists）
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query 必须为非空字符串")
     if not isinstance(documents, list):
@@ -182,36 +195,40 @@ def sort_by_relevance(query: str, documents: list[str]) -> list[dict]:
 
     q_words = set(query.lower().split())
 
-    # clean punctuation for matching: strip common punctuation
     def _normalize(words: typing.Iterable[str]) -> set[str]:
         norm: set[str] = set()
         for w in words:
-            # remove punctuation
             w = re.sub(r"[^a-z0-9]", "", w.lower())
             if w:
                 norm.add(w)
         return norm
 
     q_norm = _normalize(q_words)
-
     scored: list[dict] = []
     for idx, doc in enumerate(documents):
         d_words = set(doc.lower().split())
         d_norm = _normalize(d_words)
         overlap = len(q_norm & d_norm)
-        # use float score, stable sort will keep original order for ties
         score = float(overlap)
-        # small tie-breaker to ensure deterministic ordering without breaking descending
-        # e.g. add tiny fraction based on original position inverse to keep stable
         scored.append({"document": doc, "relevance_score": score, "_idx": idx})
-
-    # sort descending by score, then ascending by original index for stability
     scored.sort(key=lambda x: (-x["relevance_score"], x["_idx"]))
-
-    # remove helper key
     for item in scored:
         item.pop("_idx", None)
-        # ensure float
         item["relevance_score"] = float(item["relevance_score"])
-
     return scored
+
+
+def rerank(query: str, documents: list[str]) -> list[dict]:
+    """兼容别名，暴露 rerank 与 sort_by_relevance 双入口"""
+    return sort_by_relevance(query, documents)
+
+
+def rerank_batch(queries: list[str], documents_list: list[list[str]]) -> list[list[dict]]:
+    """批量 rerank 委托"""
+    if _rerank_batch is not None:
+        return _rerank_batch(queries, documents_list)
+    if not isinstance(queries, list) or not isinstance(documents_list, list):
+        raise TypeError("queries 与 documents_list 必须为 list")
+    if len(queries) != len(documents_list):
+        raise ValueError("长度不一致")
+    return [sort_by_relevance(q, docs) for q, docs in zip(queries, documents_list)]
