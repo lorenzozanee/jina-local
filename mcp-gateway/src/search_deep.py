@@ -23,6 +23,31 @@ DEFAULT_TOPK = 3
 _mem_cache: dict[str, list[dict]] = {}
 
 
+def _get_query_embedding(query: str) -> list[float]:
+    try:
+        from .embeddings import embed_one  # type: ignore
+    except ImportError:
+        from embeddings import embed_one  # type: ignore
+    return embed_one(query)
+
+
+def _enrich_with_qdrant(results: list[dict], query: str, limit: int) -> list[dict]:
+    import os
+    if os.getenv("JINA_LOCAL_ENABLE_QDRANT", "0") != "1":
+        return results
+    try:
+        from . import qdrant  # type: ignore
+    except ImportError:
+        try:
+            import qdrant  # type: ignore
+        except ImportError:
+            return results
+    try:
+        return qdrant.enrich_search_results(results, _get_query_embedding(query), limit=limit)
+    except Exception as e:
+        logger.debug("qdrant enrichment unavailable: %s", e)
+        return results
+
 def _validate_query(query: Any) -> str:
     if query is None:
         raise TypeError("query 必须为非空字符串，不能为 None")
@@ -338,6 +363,8 @@ def search_web_deep(
         # if search returned empty, return empty list (no cache)
         return []
 
+    valid_results = _enrich_with_qdrant(valid_results, query, num)
+    valid_results = [r for r in valid_results if isinstance(r, dict) and r.get("title") and r.get("url")]
     urls = [r["url"] for r in valid_results]
 
     # 2. parallel fetch via reader
