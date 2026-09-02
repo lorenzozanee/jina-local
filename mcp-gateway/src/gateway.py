@@ -31,6 +31,20 @@ except ImportError:
         _search_search_web = None  # type: ignore
         _search_parallel = None  # type: ignore
 
+try:
+    from .embeddings import embed as _emb_embed
+    from .embeddings import embed_one as _emb_embed_one
+    from .embeddings import get_dimension as _emb_dim
+except ImportError:
+    try:
+        from embeddings import embed as _emb_embed  # type: ignore
+        from embeddings import embed_one as _emb_embed_one  # type: ignore
+        from embeddings import get_dimension as _emb_dim  # type: ignore
+    except ImportError:
+        _emb_embed = None  # type: ignore
+        _emb_embed_one = None  # type: ignore
+        _emb_dim = None  # type: ignore
+
 
 def read_url(url: str, question: str | None = None, chunk_size: int = 100, top_k: int = 3) -> str:
     """生产级 read_url，委托给 reader.py（双抽取+question+缓存+严格校验）"""
@@ -120,6 +134,32 @@ def parallel_search_web(queries: list[str], num: int = 5) -> list[list[dict]]:
     if not isinstance(queries, list):
         raise TypeError("queries 必须为 list[str]")
     return [search_web(q, num=num) for q in queries]
+
+
+def embed(texts: list[str]) -> list[list[float]]:
+    """本地 embeddings，兼容 jina embeddings，L2 归一化，批量"""
+    if _emb_embed is not None:
+        return _emb_embed(texts)
+    raise RuntimeError("embeddings 模块未加载")
+
+
+def embeddings(texts: list[str]) -> list[list[float]]:
+    """兼容别名 jina embeddings"""
+    return embed(texts)
+
+
+def embed_one(text: str) -> list[float]:
+    """单条嵌入"""
+    if _emb_embed_one is not None:
+        return _emb_embed_one(text)
+    # fallback via embed
+    return embed([text])[0]
+
+
+def get_embedding_dimension() -> int:
+    if _emb_dim is not None:
+        return _emb_dim()
+    return 384
 
 
 def sort_by_relevance(query: str, documents: list[str]) -> list[dict]:
