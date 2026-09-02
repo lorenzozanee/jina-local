@@ -10,6 +10,7 @@
 
 - [为什么有这个项目](#为什么有这个项目痛点)
 - [快速开始](#快速开始3-步)
+- [多 Agent 接入（Claude Code/OpenClaw/Hermes/Codex/Opencode 通用）](#多-agent-接入claude-codeopenclawhermescodexopencode-通用)
 - [架构](#架构)
 - [替代对照表（21 工具）](#替代对照表21-工具)
 - [性能对比（5 维度雷达 + 92 测试）](#性能对比5-维度雷达--92-测试)
@@ -87,32 +88,206 @@ python -m pytest tests/ -q          # 92 passed 预期
 
 `docker-compose.yml` 要点（见 [docker-compose.yml](docker-compose.yml)）：5 服务（embeddings/reranker/reader/search/qdrant），共享单一 `hf-cache:/data` 卷，`pull_policy: missing`，`profiles: ["full","reader","search"]` 按需启动，`runtime: nvidia` + `deploy.resources.reservations.devices` 双配置兼容新旧 compose。
 
-### 步骤 3 — 配置 OpenCode MCP (Model Context Protocol)
+### 步骤 3 — 配置 MCP（多 Agent 通用，一键接入）
+
+> 路径固定 `~/jina-local`（`/home/cc/jina-local`），多传输 `stdio / sse / http` 通用。项目根 `mcp.json` 为通用模板，各 Agent 按需复制或一键写入。
+
+**通用 `mcp.json`（项目根，Claude/Codex/OpenClaw/Hermes 通用）：**
+
+```json
+{
+  "mcpServers": {
+    "jina-local": {
+      "command": "python3",
+      "args": ["/home/cc/jina-local/mcp-gateway/src/server.py"],
+      "env": {}
+    }
+  }
+}
+```
+
+**一键写入（推荐，幂等）：**
 
 ```bash
-# 自动写入 ~/.config/opencode/opencode.json 的 mcp.jina-local
+# 全部 Agent 一次写完（opencode + claude + codex + openclaw + hermes + 通用 mcp.json）
+python scripts/setup_mcp.py --agent all
+
+# 仅 OpenCode
+python scripts/setup_mcp.py --agent opencode
+# 仅 Claude Code
+python scripts/setup_mcp.py --agent claude
+# 仅 Codex
+python scripts/setup_mcp.py --agent codex
+# 仅 OpenClaw / Hermes
+python scripts/setup_mcp.py --agent openclaw
+python scripts/setup_mcp.py --agent hermes
+
+# 兼容旧入口（仅 opencode）
 python scripts/setup_global_mcp.py
 
-# 手动等价配置（opencode.json）：
-# {
-#   "mcp": {
-#     "jina-local": {
-#       "type": "local",
-#       "command": ["python3", "/home/cc/jina-local/mcp-gateway/src/server.py"],
-#       "enabled": true
-#     }
-#   }
-# }
+# 多传输（stdio 默认，sse/http 可选）
+python3 /home/cc/jina-local/mcp-gateway/src/server.py --transport stdio
+python3 /home/cc/jina-local/mcp-gateway/src/server.py --transport sse --host 0.0.0.0 --port 3000
+python3 /home/cc/jina-local/mcp-gateway/src/server.py --transport http --host 0.0.0.0 --port 3000
+python3 /home/cc/jina-local/mcp-gateway/src/server.py --help  # 查看 stdio/sse/http
+```
+
+**手动等价（opencode.json）：**
+
+```json
+{
+  "mcp": {
+    "jina-local": {
+      "type": "local",
+      "command": ["python3", "/home/cc/jina-local/mcp-gateway/src/server.py"],
+      "enabled": true
+    }
+  }
+}
 ```
 
 验证 MCP 暴露：
 
 ```bash
 python -c "import pathlib, importlib.util; s=pathlib.Path('mcp-gateway/src/server.py'); spec=importlib.util.spec_from_file_location('server', s); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print([x for x in dir(m) if not x.startswith('_')][:5])"
-python -m pytest tests/test_mcp_compatibility.py tests/test_mcp_global.py -v
+python -m pytest tests/test_mcp_compatibility.py tests/test_mcp_global.py tests/test_mcp_universal.py -v
 ```
 
-> 切换完成：OpenCode Agent 原 `jina_*` / `firecrawl_*` 调用无需改代码，网关保持兼容签名。
+> 切换完成：OpenCode Agent 原 `jina_*` / `firecrawl_*` 调用无需改代码，网关保持兼容签名。详见 [多 Agent 接入](#多-agent-接入claude-codeopenclawhermescodexopencode-通用)。
+
+---
+
+## 多 Agent 接入（Claude Code/OpenClaw/Hermes/Codex/Opencode 通用）
+
+> 统一约定：**路径固定 `~/jina-local`（`/home/cc/jina-local`）**，**多传输 `stdio / sse / http（streamable-http）`**。通用模板为项目根 `mcp.json`（`mcpServers.jina-local` → `python3 /home/cc/jina-local/mcp-gateway/src/server.py`），各 Agent 配置均为该模板的复制/转换，幂等写入。
+
+### 通用 mcp.json（项目根）
+
+```json
+{
+  "mcpServers": {
+    "jina-local": {
+      "command": "python3",
+      "args": ["/home/cc/jina-local/mcp-gateway/src/server.py"],
+      "env": {}
+    }
+  }
+}
+```
+
+- 位置：`/home/cc/jina-local/mcp.json`
+- 用途：Claude Code / Codex / OpenClaw / Hermes 通用复制源；`python scripts/setup_mcp.py --agent all` 自动维护。
+
+### Claude Code
+
+**一键（官方 CLI）：**
+
+```bash
+claude mcp add jina-local -- python3 /home/cc/jina-local/mcp-gateway/src/server.py
+claude mcp list   # 验证
+```
+
+**或配置文件（`~/.config/claude/mcp.json`，`~/.claude.json` 兼容）：**
+
+```json
+{
+  "mcpServers": {
+    "jina-local": {
+      "command": "python3",
+      "args": ["/home/cc/jina-local/mcp-gateway/src/server.py"],
+      "env": {}
+    }
+  }
+}
+```
+
+一键写入：`python scripts/setup_mcp.py --agent claude`（幂等，已存在则跳过）
+
+### Codex
+
+**配置文件 `~/.codex/config.toml`：**
+
+```toml
+[mcp_servers.jina-local]
+command = "python3"
+args = ["/home/cc/jina-local/mcp-gateway/src/server.py"]
+```
+
+**或 JSON 变体 `~/.config/codex/mcp.json`（同通用模板）：**
+
+```json
+{
+  "mcpServers": {
+    "jina-local": {
+      "command": "python3",
+      "args": ["/home/cc/jina-local/mcp-gateway/src/server.py"],
+      "env": {}
+    }
+  }
+}
+```
+
+**或 CLI（若可用）：**
+
+```bash
+codex mcp add jina-local -- python3 /home/cc/jina-local/mcp-gateway/src/server.py
+```
+
+一键写入：`python scripts/setup_mcp.py --agent codex`（同时维护 `config.toml` 与 `mcp.json`，幂等）
+
+### OpenClaw / Hermes
+
+直接复制通用模板：
+
+```bash
+cp /home/cc/jina-local/mcp.json ~/.config/openclaw/mcp.json
+cp /home/cc/jina-local/mcp.json ~/.config/hermes/mcp.json
+# 或一键
+python scripts/setup_mcp.py --agent openclaw
+python scripts/setup_mcp.py --agent hermes
+```
+
+配置路径：
+
+- OpenClaw: `~/.config/openclaw/mcp.json` → `mcpServers.jina-local`
+- Hermes: `~/.config/hermes/mcp.json` → `mcpServers.jina-local`
+
+内容同通用 `mcp.json`，`command = python3`, `args = ["/home/cc/jina-local/mcp-gateway/src/server.py"]`。
+
+### Opencode
+
+```bash
+python scripts/setup_mcp.py --agent opencode
+# 或全部
+python scripts/setup_mcp.py --agent all
+```
+
+写入 `~/.config/opencode/opencode.json`：
+
+```json
+{
+  "mcp": {
+    "jina-local": {
+      "type": "local",
+      "command": ["python3", "/home/cc/jina-local/mcp-gateway/src/server.py"],
+      "enabled": true
+    }
+  }
+}
+```
+
+旧入口仍可用：`python scripts/setup_global_mcp.py`
+
+### 多传输说明（stdio/sse/http）
+
+- `server.py` 支持 `--transport {stdio,sse,http,streamable-http}`（`--help` 可见），默认 `stdio`：
+  ```bash
+  python3 /home/cc/jina-local/mcp-gateway/src/server.py --transport stdio
+  python3 /home/cc/jina-local/mcp-gateway/src/server.py --transport sse --host 0.0.0.0 --port 3000
+  python3 /home/cc/jina-local/mcp-gateway/src/server.py --transport http --host 0.0.0.0 --port 3000
+  ```
+- `http` 为 `streamable-http` 别名，兼容 FastMCP；`stdio` 用于本地 CLI Agent，`sse/http` 用于远程/容器网关。
+- 配置中 `command` 始终指向 `~/jina-local/mcp-gateway/src/server.py` 绝对路径，不使用 worktree 临时路径。
 
 ---
 
@@ -359,7 +534,8 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
 │   ├── bench_mcp_global.py            # → /tmp/jina-local-bench-mcp-global.json
 │   ├── bench_full.py                  # 汇总 7 bench → /tmp/jina-local-bench-full.json + docs/bench-full.md
 │   ├── clean_cache.py                 # 7d/10G/100 文件 mtime 清理
-│   └── setup_global_mcp.py            # 写入 ~/.config/opencode/opencode.json 的 mcp.jina-local
+│   ├── setup_mcp.py                   # 通用写入：opencode/claude/codex/openclaw/hermes mcp 配置 + mcp.json
+│   └── setup_global_mcp.py            # 兼容旧入口（仅 opencode）
 └── docs/
     ├── bench-full.md                  # 5 维度×21 工具总评 + 雷达
     ├── bench-reader.md                # Reader 5 URL 真机对标

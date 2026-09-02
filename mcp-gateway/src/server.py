@@ -1,4 +1,13 @@
-"""FastMCP stdio 入口，复用 gateway.py 全部 20+1 工具。"""
+"""FastMCP 多传输入口，复用 gateway.py 全部 20+1 工具。
+
+支持传输：
+  python server.py --transport stdio --port 3000 --host 0.0.0.0  # stdio 默认
+  python server.py --transport sse --port 3000 --host 0.0.0.0
+  python server.py --transport http --port 3000 --host 0.0.0.0  # http -> streamable-http
+"""
+
+import argparse
+import sys
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -96,6 +105,15 @@ except ImportError:
                             locals()[_name] = getattr(_mod2, _name, None)
                     except Exception:
                         pass
+
+# 传输选项常量，暴露给 __all__ 与 --help
+SUPPORTED_TRANSPORTS = ["stdio", "sse", "http", "streamable-http"]
+TRANSPORT_CHOICES = SUPPORTED_TRANSPORTS
+AVAILABLE_TRANSPORTS = SUPPORTED_TRANSPORTS
+TRANSPORT_ALIASES = {"http": "streamable-http", "streamable-http": "streamable-http", "sse": "sse", "stdio": "stdio"}
+DEFAULT_TRANSPORT = "stdio"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 3000
 
 if FastMCP is not None:
     mcp = FastMCP("jina-local-gateway")
@@ -212,16 +230,105 @@ if FastMCP is not None:
     mcp.tool()(search_jina_blog)
     mcp.tool()(capture_screenshot_url)
 
-    def main() -> None:
-        mcp.run()
+    def _parse_args(argv=None):
+        parser = argparse.ArgumentParser(description="jina-local MCP Gateway - FastMCP stdio/sse/http")
+        parser.add_argument("--transport", choices=SUPPORTED_TRANSPORTS, default=DEFAULT_TRANSPORT, help="传输模式 (default: stdio)")
+        parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="sse/http 监听端口 (default: 3000, 1-65535)")
+        parser.add_argument("--host", default=DEFAULT_HOST, help="sse/http 监听地址 (default: 127.0.0.1, 0.0.0.0 对外暴露)")
+        args = parser.parse_args(argv)
+        if not (1 <= args.port <= 65535):
+            parser.error("port 必须在 1-65535 之间")
+        return args
+
+    def main(transport: str = DEFAULT_TRANSPORT, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
+        t_raw = (transport or DEFAULT_TRANSPORT).lower()
+        t = TRANSPORT_ALIASES.get(t_raw, t_raw)
+        # 兼容 http 别名
+        if t not in ("stdio", "sse", "streamable-http"):
+            print(f"Unsupported transport '{transport}', supported: {SUPPORTED_TRANSPORTS}", file=sys.stderr)
+            sys.exit(1)
+        if not (1 <= port <= 65535):
+            print(f"port 必须在 1-65535 之间, 实际 {port}", file=sys.stderr)
+            sys.exit(1)
+        if t == "stdio":
+            mcp.run(transport="stdio")
+            return
+        # sse / streamable-http 需要 host/port
+        try:
+            mcp.settings.host = host
+            mcp.settings.port = port
+        except Exception:
+            pass
+        # 优先使用 FastMCP 原生 transport
+        try:
+            mcp.run(transport=t)
+            return
+        except Exception as e:
+            msg = str(e).lower()
+            # 若为未知 transport 或其他可重试错误，尝试 uvicorn 包装
+            print(f"FastMCP native {t} failed: {e}, trying uvicorn wrapper...", file=sys.stderr)
+            try:
+                import uvicorn  # type: ignore
+            except ImportError:
+                print("uvicorn 未安装，无法启动 sse/http 模式，请 pip install uvicorn (已随 mcp 安装) 或升级 mcp", file=sys.stderr)
+                print(f"提示: mcp.run(transport='{t}') 不可用，已优雅降级提示", file=sys.stderr)
+                sys.exit(1)
+            try:
+                if t == "sse":
+                    app = mcp.sse_app()
+                else:
+                    app = mcp.streamable_http_app()
+                uvicorn.run(app, host=host, port=port)
+                return
+            except Exception as e2:
+                print(f"uvicorn wrapper failed for {t}: {e2}", file=sys.stderr)
+                sys.exit(1)
 
     if __name__ == "__main__":
-        main()
+        _args = _parse_args()
+        main(transport=_args.transport, host=_args.host, port=_args.port)
+
+    __all__ = [
+        "read_url", "parallel_read_url", "search_web", "sort_by_relevance", "search_web_deep",
+        "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf",
+        "guess_datetime_url", "primer", "search_arxiv", "parallel_search_arxiv", "search_ssrn",
+        "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog",
+        "capture_screenshot_url", "mcp", "main", "_parse_args",
+        "SUPPORTED_TRANSPORTS", "TRANSPORT_CHOICES", "AVAILABLE_TRANSPORTS", "TRANSPORT_ALIASES",
+        "DEFAULT_TRANSPORT", "DEFAULT_HOST", "DEFAULT_PORT",
+    ]
 else:  # fallback when mcp not installed
     mcp = None  # type: ignore
 
-    def main() -> None:  # pragma: no cover
+    SUPPORTED_TRANSPORTS = ["stdio", "sse", "http", "streamable-http"]
+    TRANSPORT_CHOICES = SUPPORTED_TRANSPORTS
+    AVAILABLE_TRANSPORTS = SUPPORTED_TRANSPORTS
+    TRANSPORT_ALIASES = {"http": "streamable-http", "streamable-http": "streamable-http", "sse": "sse", "stdio": "stdio"}
+    DEFAULT_TRANSPORT = "stdio"
+    DEFAULT_HOST = "127.0.0.1"
+    DEFAULT_PORT = 3000
+
+    def _parse_args(argv=None):  # pragma: no cover
+        parser = argparse.ArgumentParser(description="jina-local MCP Gateway - FastMCP stdio/sse/http (mcp 未安装)")
+        parser.add_argument("--transport", choices=SUPPORTED_TRANSPORTS, default=DEFAULT_TRANSPORT, help="传输模式 (default: stdio)")
+        parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="sse/http 监听端口 (default: 3000, 1-65535)")
+        parser.add_argument("--host", default=DEFAULT_HOST, help="sse/http 监听地址 (default: 127.0.0.1, 0.0.0.0 对外暴露)")
+        return parser.parse_args(argv)
+
+    def main(transport: str = DEFAULT_TRANSPORT, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:  # pragma: no cover
         raise RuntimeError("mcp>=1.0 未安装，无法启动 FastMCP server，请先 pip install mcp")
 
+    if __name__ == "__main__":  # pragma: no cover
+        _args = _parse_args()
+        main(transport=_args.transport, host=_args.host, port=_args.port)
+
     # 保留原始函数可直接调用
-    __all__ = ["read_url", "parallel_read_url", "search_web", "sort_by_relevance", "search_web_deep", "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf", "guess_datetime_url", "primer", "search_arxiv", "parallel_search_arxiv", "search_ssrn", "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog", "capture_screenshot_url", "mcp", "main"]
+    __all__ = [
+        "read_url", "parallel_read_url", "search_web", "sort_by_relevance", "search_web_deep",
+        "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf",
+        "guess_datetime_url", "primer", "search_arxiv", "parallel_search_arxiv", "search_ssrn",
+        "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog",
+        "capture_screenshot_url", "mcp", "main", "_parse_args",
+        "SUPPORTED_TRANSPORTS", "TRANSPORT_CHOICES", "AVAILABLE_TRANSPORTS", "TRANSPORT_ALIASES",
+        "DEFAULT_TRANSPORT", "DEFAULT_HOST", "DEFAULT_PORT",
+    ]

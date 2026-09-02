@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "jina-local": {
+      "command": "python3",
+      "args": [
+        "/home/cc/jina-local/mcp-gateway/src/server.py"
+      ],
+      "env": {}
+    }
+  }
+}
