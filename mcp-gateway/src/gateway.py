@@ -59,6 +59,14 @@ except ImportError:
         _rerank_sort = None  # type: ignore
         _rerank_batch = None  # type: ignore
 
+try:
+    from .search_deep import search_web_deep as _search_deep
+except ImportError:
+    try:
+        from search_deep import search_web_deep as _search_deep  # type: ignore
+    except ImportError:
+        _search_deep = None  # type: ignore
+
 
 def read_url(url: str, question: str | None = None, chunk_size: int = 100, top_k: int = 3) -> str:
     """生产级 read_url，委托给 reader.py（双抽取+question+缓存+严格校验）"""
@@ -232,3 +240,25 @@ def rerank_batch(queries: list[str], documents_list: list[list[str]]) -> list[li
     if len(queries) != len(documents_list):
         raise ValueError("长度不一致")
     return [sort_by_relevance(q, docs) for q, docs in zip(queries, documents_list)]
+
+
+def search_web_deep(query: str, num: int = 5, chunk_size: int = 100, **kwargs) -> list[dict]:
+    """search_web_deep 编排，委托至 search_deep.py"""
+    # 兼容 limit/top_k 别名
+    if "limit" in kwargs and kwargs["limit"] is not None:
+        try:
+            num = int(kwargs["limit"])
+        except Exception:
+            pass
+    if "top_k" in kwargs and kwargs["top_k"] is not None:
+        try:
+            num = int(kwargs["top_k"])
+        except Exception:
+            pass
+    if _search_deep is not None:
+        return _search_deep(query, num=num, chunk_size=chunk_size, **kwargs)
+    raise RuntimeError("search_deep 模块未加载")
+
+
+# alias for jina compatibility
+search_deep = search_web_deep
