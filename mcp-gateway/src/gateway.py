@@ -93,6 +93,52 @@ except ImportError:
         _guess_dt = None  # type: ignore
         _primer = None  # type: ignore
 
+try:
+    from .search_academic import search_arxiv as _search_arxiv
+    from .search_academic import parallel_search_arxiv as _parallel_search_arxiv
+    from .search_academic import search_ssrn as _search_ssrn
+    from .search_academic import parallel_search_ssrn as _parallel_search_ssrn
+    from .search_academic import search_bibtex as _search_bibtex
+    from .search_academic import search_images as _search_images
+    from .search_academic import search_jina_blog as _search_jina_blog
+    from .search_academic import capture_screenshot_url as _capture_screenshot
+except ImportError:
+    try:
+        from search_academic import search_arxiv as _search_arxiv  # type: ignore
+        from search_academic import parallel_search_arxiv as _parallel_search_arxiv  # type: ignore
+        from search_academic import search_ssrn as _search_ssrn  # type: ignore
+        from search_academic import parallel_search_ssrn as _parallel_search_ssrn  # type: ignore
+        from search_academic import search_bibtex as _search_bibtex  # type: ignore
+        from search_academic import search_images as _search_images  # type: ignore
+        from search_academic import search_jina_blog as _search_jina_blog  # type: ignore
+        from search_academic import capture_screenshot_url as _capture_screenshot  # type: ignore
+    except ImportError:
+        try:
+            import importlib.util as _ilu
+            import pathlib as _pl
+            _sa_path = _pl.Path(__file__).with_name("search_academic.py")
+            _spec_sa = _ilu.spec_from_file_location("search_academic", _sa_path)
+            assert _spec_sa and _spec_sa.loader
+            _sa_mod = _ilu.module_from_spec(_spec_sa)
+            _spec_sa.loader.exec_module(_sa_mod)  # type: ignore
+            _search_arxiv = _sa_mod.search_arxiv  # type: ignore
+            _parallel_search_arxiv = _sa_mod.parallel_search_arxiv  # type: ignore
+            _search_ssrn = _sa_mod.search_ssrn  # type: ignore
+            _parallel_search_ssrn = _sa_mod.parallel_search_ssrn  # type: ignore
+            _search_bibtex = _sa_mod.search_bibtex  # type: ignore
+            _search_images = _sa_mod.search_images  # type: ignore
+            _search_jina_blog = _sa_mod.search_jina_blog  # type: ignore
+            _capture_screenshot = _sa_mod.capture_screenshot_url  # type: ignore
+        except Exception:
+            _search_arxiv = None  # type: ignore
+            _parallel_search_arxiv = None  # type: ignore
+            _search_ssrn = None  # type: ignore
+            _parallel_search_ssrn = None  # type: ignore
+            _search_bibtex = None  # type: ignore
+            _search_images = None  # type: ignore
+            _search_jina_blog = None  # type: ignore
+            _capture_screenshot = None  # type: ignore
+
 
 def read_url(url: str, question: str | None = None, chunk_size: int = 100, top_k: int = 3) -> str:
     """生产级 read_url，委托给 reader.py（双抽取+question+缓存+严格校验）"""
@@ -329,6 +375,54 @@ def primer(**kwargs) -> dict:
     raise RuntimeError("utils 模块未加载")
 
 
+def search_arxiv(query: str, num: int = 5, **kwargs) -> list[dict]:
+    if _search_arxiv is not None:
+        return _search_arxiv(query, num=num, **kwargs)
+    raise RuntimeError("search_academic 模块未加载")
+
+
+def parallel_search_arxiv(queries: list[str], num: int = 5, **kwargs) -> list[list[dict]]:
+    if _parallel_search_arxiv is not None:
+        return _parallel_search_arxiv(queries, num=num, **kwargs)
+    raise RuntimeError("search_academic 模块未加载")
+
+
+def search_ssrn(query: str, num: int = 5, **kwargs) -> list[dict]:
+    if _search_ssrn is not None:
+        return _search_ssrn(query, num=num, **kwargs)
+    raise RuntimeError("search_academic 模块未加载")
+
+
+def parallel_search_ssrn(queries: list[str], num: int = 5, **kwargs) -> list[list[dict]]:
+    if _parallel_search_ssrn is not None:
+        return _parallel_search_ssrn(queries, num=num, **kwargs)
+    raise RuntimeError("search_academic 模块未加载")
+
+
+def search_bibtex(query: str, num: int = 5, **kwargs) -> list[dict]:
+    if _search_bibtex is not None:
+        return _search_bibtex(query, num=num, **kwargs)
+    raise RuntimeError("search_academic 模块未加载")
+
+
+def search_images(query: str, num: int = 5, **kwargs) -> list[dict]:
+    if _search_images is not None:
+        return _search_images(query, num=num, **kwargs)
+    raise RuntimeError("search_academic 模块未加载")
+
+
+def search_jina_blog(query: str, num: int = 5, **kwargs) -> list[dict]:
+    if _search_jina_blog is not None:
+        return _search_jina_blog(query, num=num, **kwargs)
+    raise RuntimeError("search_academic 模块未加载")
+
+
+def capture_screenshot_url(url: str, **kwargs) -> dict:
+    if _capture_screenshot is not None:
+        return _capture_screenshot(url, **kwargs)
+    raise RuntimeError("search_academic 模块未加载")
+
+
 # aliases for jina / additional compatibility
 deduplicate = deduplicate_strings
 classify = classify_text
@@ -339,6 +433,12 @@ jina_expand_query = expand_query
 jina_extract_pdf = extract_pdf
 jina_guess_datetime_url = guess_datetime_url
 jina_primer = primer
+jina_search_arxiv = search_arxiv
+jina_search_ssrn = search_ssrn
+jina_search_bibtex = search_bibtex
+jina_search_images = search_images
+jina_search_jina_blog = search_jina_blog
+jina_capture_screenshot_url = capture_screenshot_url
 
 # alias for jina compatibility
 search_deep = search_web_deep

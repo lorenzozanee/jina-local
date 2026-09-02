@@ -1,4 +1,4 @@
-"""FastMCP stdio 入口，复用 gateway.py 三函数。"""
+"""FastMCP stdio 入口，复用 gateway.py 全部 20+1 工具。"""
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -8,6 +8,7 @@ except ImportError as _e:  # pragma: no cover
 try:
     from .gateway import (
         read_url,
+        parallel_read_url,
         search_web,
         sort_by_relevance,
         parallel_search_web,
@@ -19,10 +20,18 @@ try:
         extract_pdf,
         guess_datetime_url,
         primer,
+        search_arxiv,
+        parallel_search_arxiv,
+        search_ssrn,
+        parallel_search_ssrn,
+        search_bibtex,
+        search_images,
+        search_jina_blog,
+        capture_screenshot_url,
     )
 except ImportError:
     try:
-        from gateway import read_url, search_web, sort_by_relevance, parallel_search_web, search_web_deep, deduplicate_strings, deduplicate_images, classify_text, expand_query, extract_pdf, guess_datetime_url, primer  # type: ignore
+        from gateway import read_url, parallel_read_url, search_web, sort_by_relevance, parallel_search_web, search_web_deep, deduplicate_strings, deduplicate_images, classify_text, expand_query, extract_pdf, guess_datetime_url, primer, search_arxiv, parallel_search_arxiv, search_ssrn, parallel_search_ssrn, search_bibtex, search_images, search_jina_blog, capture_screenshot_url  # type: ignore
     except ImportError:  # fallback for direct file execution without package context
         import importlib.util
         import pathlib as _pl
@@ -33,6 +42,7 @@ except ImportError:
         _gw = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(_gw)  # type: ignore
         read_url = _gw.read_url  # type: ignore
+        parallel_read_url = getattr(_gw, "parallel_read_url", None)  # type: ignore
         search_web = _gw.search_web  # type: ignore
         sort_by_relevance = _gw.sort_by_relevance  # type: ignore
         parallel_search_web = getattr(_gw, "parallel_search_web", None)  # type: ignore
@@ -44,8 +54,20 @@ except ImportError:
         extract_pdf = getattr(_gw, "extract_pdf", None)  # type: ignore
         guess_datetime_url = getattr(_gw, "guess_datetime_url", None)  # type: ignore
         primer = getattr(_gw, "primer", None)  # type: ignore
+        search_arxiv = getattr(_gw, "search_arxiv", None)  # type: ignore
+        parallel_search_arxiv = getattr(_gw, "parallel_search_arxiv", None)  # type: ignore
+        search_ssrn = getattr(_gw, "search_ssrn", None)  # type: ignore
+        parallel_search_ssrn = getattr(_gw, "parallel_search_ssrn", None)  # type: ignore
+        search_bibtex = getattr(_gw, "search_bibtex", None)  # type: ignore
+        search_images = getattr(_gw, "search_images", None)  # type: ignore
+        search_jina_blog = getattr(_gw, "search_jina_blog", None)  # type: ignore
+        capture_screenshot_url = getattr(_gw, "capture_screenshot_url", None)  # type: ignore
+        if parallel_read_url is None:
+            try:
+                from reader import parallel_read_url as parallel_read_url  # type: ignore
+            except ImportError:
+                parallel_read_url = None  # type: ignore
         if parallel_search_web is None:
-            # fallback via search module
             try:
                 from search import parallel_search_web as parallel_search_web  # type: ignore
             except ImportError:
@@ -55,41 +77,25 @@ except ImportError:
                 from search_deep import search_web_deep as search_web_deep  # type: ignore
             except ImportError:
                 search_web_deep = None  # type: ignore
-        if deduplicate_strings is None:
-            try:
-                from utils import deduplicate_strings as deduplicate_strings  # type: ignore
-            except ImportError:
-                deduplicate_strings = None  # type: ignore
-        if deduplicate_images is None:
-            try:
-                from utils import deduplicate_images as deduplicate_images  # type: ignore
-            except ImportError:
-                deduplicate_images = None  # type: ignore
-        if classify_text is None:
-            try:
-                from utils import classify_text as classify_text  # type: ignore
-            except ImportError:
-                classify_text = None  # type: ignore
-        if expand_query is None:
-            try:
-                from utils import expand_query as expand_query  # type: ignore
-            except ImportError:
-                expand_query = None  # type: ignore
-        if extract_pdf is None:
-            try:
-                from utils import extract_pdf as extract_pdf  # type: ignore
-            except ImportError:
-                extract_pdf = None  # type: ignore
-        if guess_datetime_url is None:
-            try:
-                from utils import guess_datetime_url as guess_datetime_url  # type: ignore
-            except ImportError:
-                guess_datetime_url = None  # type: ignore
-        if primer is None:
-            try:
-                from utils import primer as primer  # type: ignore
-            except ImportError:
-                primer = None  # type: ignore
+        # fallback for academic utils
+        for _name in ["search_arxiv", "parallel_search_arxiv", "search_ssrn", "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog", "capture_screenshot_url"]:
+            if locals().get(_name) is None:
+                try:
+                    import importlib as _imp
+                    _sa = _imp.import_module("search_academic")
+                    locals()[_name] = getattr(_sa, _name, None)
+                except Exception:
+                    try:
+                        import pathlib as _p2
+                        _sa_path = _p2.Path(__file__).with_name("search_academic.py")
+                        if _sa_path.exists():
+                            _spec2 = importlib.util.spec_from_file_location("search_academic", _sa_path)
+                            assert _spec2 and _spec2.loader
+                            _mod2 = importlib.util.module_from_spec(_spec2)
+                            _spec2.loader.exec_module(_mod2)  # type: ignore
+                            locals()[_name] = getattr(_mod2, _name, None)
+                    except Exception:
+                        pass
 
 if FastMCP is not None:
     mcp = FastMCP("jina-local-gateway")
@@ -98,6 +104,10 @@ if FastMCP is not None:
     def read_url_tool(url: str) -> str:
         """Fetch URL and return markdown string (wrapper over gateway.read_url)."""
         return read_url(url)
+
+    @mcp.tool()
+    def parallel_read_url_tool(urls: list[str]) -> list[str]:
+        return parallel_read_url(urls)
 
     @mcp.tool()
     def search_web_tool(query: str, num: int = 5) -> list[dict]:
@@ -147,8 +157,41 @@ if FastMCP is not None:
     def primer_tool() -> dict:
         return primer()
 
-    # 同时直接暴露原始函数名以兼容 jina 工具名
+    @mcp.tool()
+    def search_arxiv_tool(query: str, num: int = 5) -> list[dict]:
+        return search_arxiv(query, num=num)
+
+    @mcp.tool()
+    def parallel_search_arxiv_tool(queries: list[str], num: int = 5) -> list[list[dict]]:
+        return parallel_search_arxiv(queries, num=num)
+
+    @mcp.tool()
+    def search_ssrn_tool(query: str, num: int = 5) -> list[dict]:
+        return search_ssrn(query, num=num)
+
+    @mcp.tool()
+    def parallel_search_ssrn_tool(queries: list[str], num: int = 5) -> list[list[dict]]:
+        return parallel_search_ssrn(queries, num=num)
+
+    @mcp.tool()
+    def search_bibtex_tool(query: str, num: int = 5) -> list[dict]:
+        return search_bibtex(query, num=num)
+
+    @mcp.tool()
+    def search_images_tool(query: str, num: int = 5) -> list[dict]:
+        return search_images(query, num=num)
+
+    @mcp.tool()
+    def search_jina_blog_tool(query: str, num: int = 5) -> list[dict]:
+        return search_jina_blog(query, num=num)
+
+    @mcp.tool()
+    def capture_screenshot_url_tool(url: str) -> dict:
+        return capture_screenshot_url(url)
+
+    # 同时直接暴露原始函数名以兼容 jina 工具名（21工具）
     mcp.tool()(read_url)
+    mcp.tool()(parallel_read_url)
     mcp.tool()(search_web)
     mcp.tool()(parallel_search_web)
     mcp.tool()(sort_by_relevance)
@@ -160,6 +203,14 @@ if FastMCP is not None:
     mcp.tool()(extract_pdf)
     mcp.tool()(guess_datetime_url)
     mcp.tool()(primer)
+    mcp.tool()(search_arxiv)
+    mcp.tool()(parallel_search_arxiv)
+    mcp.tool()(search_ssrn)
+    mcp.tool()(parallel_search_ssrn)
+    mcp.tool()(search_bibtex)
+    mcp.tool()(search_images)
+    mcp.tool()(search_jina_blog)
+    mcp.tool()(capture_screenshot_url)
 
     def main() -> None:
         mcp.run()
@@ -173,4 +224,4 @@ else:  # fallback when mcp not installed
         raise RuntimeError("mcp>=1.0 未安装，无法启动 FastMCP server，请先 pip install mcp")
 
     # 保留原始函数可直接调用
-    __all__ = ["read_url", "search_web", "sort_by_relevance", "search_web_deep", "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf", "guess_datetime_url", "primer", "mcp", "main"]
+    __all__ = ["read_url", "parallel_read_url", "search_web", "sort_by_relevance", "search_web_deep", "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf", "guess_datetime_url", "primer", "search_arxiv", "parallel_search_arxiv", "search_ssrn", "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog", "capture_screenshot_url", "mcp", "main"]
