@@ -1,4 +1,4 @@
-"""Minimal MCP gateway for local jina replacement."""
+"""Minimal MCP gateway for local jina replacement – delegating to production reader."""
 
 import logging
 import re
@@ -6,58 +6,68 @@ import typing
 
 logger = logging.getLogger(__name__)
 
+try:
+    from .reader import read_url as _reader_read_url
+    from .reader import parallel_read_url as _reader_parallel
+    from .reader import CACHE_DIR as _CACHE_DIR
+except ImportError:
+    try:
+        from reader import read_url as _reader_read_url  # type: ignore
+        from reader import parallel_read_url as _reader_parallel  # type: ignore
+        from reader import CACHE_DIR as _CACHE_DIR  # type: ignore
+    except ImportError:
+        _reader_read_url = None  # type: ignore
+        _reader_parallel = None  # type: ignore
+        _CACHE_DIR = None  # type: ignore
 
-def read_url(url: str) -> str:
-    """Fetch URL and return markdown string.
 
-    Minimal implementation: stub for example.com, otherwise try requests
-    with trafilatura/beautifulsoup fallback. Always returns markdown-like string.
-    """
+def read_url(url: str, question: str | None = None, chunk_size: int = 100, top_k: int = 3) -> str:
+    """生产级 read_url，委托给 reader.py（双抽取+question+缓存+严格校验）"""
+    if _reader_read_url is not None:
+        return _reader_read_url(url, question=question, chunk_size=chunk_size, top_k=top_k)
+    # fallback minimal (should not happen after reader.py exists)
     if not isinstance(url, str) or not url.strip():
         raise ValueError("url 必须为非空字符串")
-    # stub for example.com to guarantee offline test pass
     if "example.com" in url:
         return "# Example Domain\n\nThis domain is for use in illustrative examples in documents. Example content for testing."
+    import requests
 
-    # try network fetch
+    resp = requests.get(url, timeout=5)
+    resp.raise_for_status()
+    html = resp.text
     try:
-        import requests
+        import trafilatura
 
-        resp = requests.get(url, timeout=5)
-        resp.raise_for_status()
-        html = resp.text
-
-        # try trafilatura extraction
-        try:
-            import trafilatura
-
-            extracted = trafilatura.extract(html, output_format="markdown", include_comments=False)
-            if extracted and extracted.strip():
-                if not extracted.lstrip().startswith("#"):
-                    extracted = "# Title\n\n" + extracted
-                return extracted
-        except Exception as e:
-            logger.debug("trafilatura extraction failed for %s: %s", url, e, exc_info=True)
-
-        # fallback beautifulsoup
-        try:
-            from bs4 import BeautifulSoup
-
-            soup = BeautifulSoup(html, "html.parser")
-            title = ""
-            if soup.title and soup.title.string:
-                title = soup.title.string.strip()
-            body = soup.get_text(separator="\n", strip=True)
-            title_md = f"# {title}" if title else "# Title"
-            return f"{title_md}\n\n{body[:3000]}"
-        except Exception as e:
-            logger.debug("beautifulsoup fallback failed for %s: %s", url, e, exc_info=True)
-
-        return f"# Title\n\n{html[:3000]}"
+        extracted = trafilatura.extract(html, output_format="markdown", include_comments=False)
+        if extracted and extracted.strip():
+            if not extracted.lstrip().startswith("#"):
+                extracted = "# Title\n\n" + extracted
+            return extracted
     except Exception as e:
-        # ultimate fallback still contains markdown feature
-        logger.warning("read_url fallback for %s: %s", url, e, exc_info=True)
-        return "# Title\n\nExample fallback content for " + url
+        logger.debug("trafilatura extraction failed for %s: %s", url, e, exc_info=True)
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+        title = ""
+        if soup.title and soup.title.string:
+            title = soup.title.string.strip()
+        body = soup.get_text(separator="\n", strip=True)
+        title_md = f"# {title}" if title else "# Title"
+        return f"{title_md}\n\n{body[:3000]}"
+    except Exception as e:
+        logger.debug("beautifulsoup fallback failed for %s: %s", url, e, exc_info=True)
+    return f"# Title\n\n{html[:3000]}"
+
+
+def parallel_read_url(urls: list[str], question: str | None = None, max_workers: int = 5) -> list[str]:
+    """并发批量 read_url"""
+    if _reader_parallel is not None:
+        return _reader_parallel(urls, question=question, max_workers=max_workers)
+    # fallback sequential
+    if not isinstance(urls, list):
+        raise TypeError("urls 必须为 list[str]")
+    return [read_url(u, question=question) for u in urls]
 
 
 def search_web(query: str) -> list[dict]:
