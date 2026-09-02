@@ -244,6 +244,29 @@ def _batch_by_tokens(texts: list[str], max_tokens: int | None = None) -> list[li
     return batches
 
 
+
+
+def _tei_url() -> str:
+    return os.getenv("JINA_LOCAL_EMBEDDINGS_URL", "http://127.0.0.1:3001/embed")
+
+
+def _tei_embed(texts: list[str]) -> list[np.ndarray] | None:
+    try:
+        import requests
+        response = requests.post(_tei_url(), json={"inputs": texts}, timeout=float(os.getenv("JINA_LOCAL_TEI_TIMEOUT", "10")))
+        response.raise_for_status()
+        payload = response.json()
+        vectors = payload if isinstance(payload, list) else payload.get("data", [])
+        if vectors and isinstance(vectors[0], dict):
+            vectors = [item["embedding"] for item in vectors]
+        result = [np.asarray(vector, dtype=np.float32) for vector in vectors]
+        if len(result) != len(texts):
+            raise ValueError("TEI 返回向量数量不一致")
+        return result
+    except Exception as exc:
+        logger.warning("TEI embeddings unavailable at %s: %s", _tei_url(), exc)
+        return None
+
 def _init_backend():
     global _model, _model_name, _DIM, _backend, _device, _model_ref
     if _backend is not None:
@@ -257,6 +280,13 @@ def _init_backend():
             _touch()
             return _backend
         device = _get_device()
+        tei_probe = _tei_embed(["__jina_local_healthcheck__"])
+        if tei_probe is not None:
+            _backend = "tei"
+            _DIM = int(tei_probe[0].size)
+            _touch()
+            _write_gpu_stats("embeddings_tei", {"device": "remote-gpu", "url": _tei_url(), "dim": _DIM})
+            return _backend
         # log before
         try:
             mem_before = _gpu_memory_mb()
@@ -358,7 +388,8 @@ def _get_dim() -> int:
 
 
 def _cache_path(text: str) -> pathlib.Path:
-    h = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    raw = f"{_backend or 'unknown'}|||{_model_name or 'tei'}|||{text}"
+    h = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return CACHE_DIR / f"embed-{h}.npy"
 
 
@@ -458,7 +489,13 @@ def embed(texts: list[str]) -> list[list[float]]:
 
     computed: dict[int, np.ndarray] = {}
     if to_compute_texts:
-        if _backend == "hf" and _model is not None:
+        if _backend == "tei":
+            vectors = _tei_embed(to_compute_texts)
+            if vectors is None:
+                raise RuntimeError("TEI 后端在初始化后不可用")
+            for idx, vec in zip(to_compute_idx, vectors):
+                computed[idx] = vec
+        elif _backend == "hf" and _model is not None:
             # batch slicing by max_batch_tokens
             batches = _batch_by_tokens(to_compute_texts)
             # need to map global idx -> vec

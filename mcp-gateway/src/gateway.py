@@ -35,29 +35,35 @@ try:
     from .embeddings import embed as _emb_embed
     from .embeddings import embed_one as _emb_embed_one
     from .embeddings import get_dimension as _emb_dim
+    from .embeddings import get_backend as _emb_backend
 except ImportError:
     try:
         from embeddings import embed as _emb_embed  # type: ignore
         from embeddings import embed_one as _emb_embed_one  # type: ignore
         from embeddings import get_dimension as _emb_dim  # type: ignore
+        from embeddings import get_backend as _emb_backend  # type: ignore
     except ImportError:
         _emb_embed = None  # type: ignore
         _emb_embed_one = None  # type: ignore
         _emb_dim = None  # type: ignore
+        _emb_backend = lambda: "unavailable"
 
 try:
     from .reranker import rerank as _rerank
     from .reranker import sort_by_relevance as _rerank_sort
     from .reranker import rerank_batch as _rerank_batch
+    from .reranker import get_backend as _rerank_backend
 except ImportError:
     try:
         from reranker import rerank as _rerank  # type: ignore
         from reranker import sort_by_relevance as _rerank_sort  # type: ignore
         from reranker import rerank_batch as _rerank_batch  # type: ignore
+        from reranker import get_backend as _rerank_backend  # type: ignore
     except ImportError:
         _rerank = None  # type: ignore
         _rerank_sort = None  # type: ignore
         _rerank_batch = None  # type: ignore
+        _rerank_backend = lambda: "unavailable"
 
 try:
     from .search_deep import search_web_deep as _search_deep
@@ -255,6 +261,13 @@ def get_embedding_dimension() -> int:
         return _emb_dim()
     return 384
 
+
+def get_embedding_backend() -> str:
+    return _emb_backend()
+
+
+def get_reranker_backend() -> str:
+    return _rerank_backend()
 
 def sort_by_relevance(query: str, documents: list[str]) -> list[dict]:
     """语义 Reranker，委托至 reranker.py（CrossEncoder 优先，fallback 余弦），保持兼容 wrapper"""

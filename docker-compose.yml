@@ -7,16 +7,19 @@ services:
     # digest 固定示例（需 docker pull 后以 `docker inspect --format='{{.RepoDigests}}'` 覆写）:
     # image: ghcr.io/huggingface/text-embeddings-inference:120-1.9@sha256:PLACEHOLDER_EMBEDDINGS_DIGEST
     pull_policy: missing
-    command: --model-id BAAI/bge-m3 --dtype float16 --max-batch-tokens 16384 --max-concurrent-requests 64
-    ports:
-      - "3001:80"
+    command: --model-id BAAI/bge-m3 --dtype float16 --max-batch-tokens 16384 --max-concurrent-requests 64 --port 3001
+    network_mode: host
+    environment:
+      HF_HUB_OFFLINE: "0"
+      HTTP_PROXY: http://127.0.0.1:7890
+      HTTPS_PROXY: http://127.0.0.1:7890
+      NO_PROXY: localhost,127.0.0.1
+      CUDA_VISIBLE_DEVICES: "0"
+      CACHE_DIR: /tmp/opencode/jina-local
+    ports: []
     volumes:
       - hf-cache:/data
       - /tmp/opencode:/tmp/opencode
-    env_file: .env
-    environment:
-      - HF_HUB_OFFLINE=0
-      - CUDA_VISIBLE_DEVICES=0
     restart: unless-stopped
     runtime: nvidia
     shm_size: 1g
@@ -34,16 +37,18 @@ services:
     image: ghcr.io/huggingface/text-embeddings-inference:120-1.9
     # image: ghcr.io/huggingface/text-embeddings-inference:120-1.9@sha256:PLACEHOLDER_RERANKER_DIGEST
     pull_policy: missing
-    command: --model-id BAAI/bge-reranker-v2-m3 --dtype float16 --max-batch-tokens 16384 --max-concurrent-requests 64
-    ports:
-      - "3002:80"
+    command: --model-id BAAI/bge-reranker-v2-m3 --dtype float16 --max-batch-tokens 16384 --max-concurrent-requests 64 --port 3002
+    network_mode: host
+    environment:
+      HF_HUB_OFFLINE: "0"
+      HTTP_PROXY: http://127.0.0.1:7890
+      HTTPS_PROXY: http://127.0.0.1:7890
+      NO_PROXY: localhost,127.0.0.1
+      CUDA_VISIBLE_DEVICES: "0"
+    ports: []
     volumes:
       - hf-cache:/data
       - /tmp/opencode:/tmp/opencode
-    env_file: .env
-    environment:
-      - HF_HUB_OFFLINE=0
-      - CUDA_VISIBLE_DEVICES=0
     restart: unless-stopped
     runtime: nvidia
     shm_size: 1g

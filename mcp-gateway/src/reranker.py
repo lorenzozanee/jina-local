@@ -242,7 +242,7 @@ def _sigmoid(x: float) -> float:
 
 
 def _cache_key(query: str, doc: str) -> str:
-    raw = f"{query}|||{doc}"
+    raw = f"{_backend or 'unknown'}|||{_MODEL_ID}|||{query}|||{doc}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -278,6 +278,26 @@ def _set_cached(key: str, score: float) -> None:
         logger.debug("rerank cache write fail %s: %s", key[:8], e)
 
 
+
+
+def _tei_url() -> str:
+    return os.getenv("JINA_LOCAL_RERANKER_URL", "http://127.0.0.1:3002/rerank")
+
+
+def _tei_rerank(query: str, documents: List[str]) -> List[float] | None:
+    try:
+        import requests
+        response = requests.post(_tei_url(), json={"query": query, "texts": documents}, timeout=float(os.getenv("JINA_LOCAL_TEI_TIMEOUT", "10")))
+        response.raise_for_status()
+        payload = response.json()
+        scores = [0.0] * len(documents)
+        for item in payload:
+            scores[int(item["index"])] = max(0.0, min(1.0, float(item["score"])))
+        return scores
+    except Exception as exc:
+        logger.warning("TEI reranker unavailable at %s: %s", _tei_url(), exc)
+        return None
+
 def _init_backend() -> str:
     global _model, _backend, _device, _model_ref
     if _backend is not None:
@@ -290,6 +310,12 @@ def _init_backend() -> str:
             _touch()
             return _backend
         device = _get_device()
+        tei_probe = _tei_rerank("__jina_local_healthcheck__", ["healthcheck"])
+        if tei_probe is not None:
+            _backend = "tei"
+            _touch()
+            _write_gpu_stats("reranker_tei", {"device": "remote-gpu", "url": _tei_url()})
+            return _backend
         try:
             mem_before = _gpu_memory_mb()
             logger.info("Reranker init start device=%s mem_before=%.1fMB", device, mem_before.get("allocated_mb", 0))
@@ -500,7 +526,11 @@ def rerank(query: str, documents: List[str]) -> List[Dict]:
             docs_uncached.append(doc)
 
     if docs_uncached:
-        if backend == "cross" and _model is not None:
+        if backend == "tei":
+            computed = _tei_rerank(query, docs_uncached)
+            if computed is None:
+                computed = _embed_cosine_scores(query, docs_uncached)
+        elif backend == "cross" and _model is not None:
             computed = _cross_scores(query, docs_uncached)
         else:
             # also batch slicing for embed fallback (via _batch_by_tokens_pairs -> embed batch slicing anyway)
