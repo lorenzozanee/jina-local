@@ -1,15 +1,25 @@
 services:
   embeddings:
-    # Blackwell 5070 需 ghcr.io/huggingface/text-embeddings-inference:120-1.9 标签，保留注释
-    image: ghcr.io/huggingface/text-embeddings-inference:1.9
-    command: --model-id BAAI/bge-m3 --dtype float16
+    # Blackwell 5070 专用: 120-1.9 (CUDA 12/13.2 Blackwell sm_120)，需 NVIDIA Container Toolkit + 驱动 595.84
+    # fallback 通用标签: ghcr.io/huggingface/text-embeddings-inference:1.9 (非 Blackwell，老卡兼容)
+    # 版本见 docs/images.md；hf-cache 为共享单一 volume 已验证（embeddings/reranker 共用）
+    image: ghcr.io/huggingface/text-embeddings-inference:120-1.9
+    # digest 固定示例（需 docker pull 后以 `docker inspect --format='{{.RepoDigests}}'` 覆写）:
+    # image: ghcr.io/huggingface/text-embeddings-inference:120-1.9@sha256:PLACEHOLDER_EMBEDDINGS_DIGEST
+    pull_policy: missing
+    command: --model-id BAAI/bge-m3 --dtype float16 --max-batch-tokens 16384 --max-concurrent-requests 64
     ports:
       - "3001:80"
     volumes:
       - hf-cache:/data
       - /tmp/opencode:/tmp/opencode
     env_file: .env
+    environment:
+      - HF_HUB_OFFLINE=0
+      - CUDA_VISIBLE_DEVICES=0
     restart: unless-stopped
+    runtime: nvidia
+    shm_size: 1g
     deploy:
       resources:
         reservations:
@@ -18,15 +28,25 @@ services:
               capabilities: [gpu]
 
   reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:1.9
-    command: --model-id BAAI/bge-reranker-v2-m3 --dtype float16
+    # Blackwell 5070 专用: 120-1.9，fallback 通用 1.9 见注释
+    # fallback: ghcr.io/huggingface/text-embeddings-inference:1.9
+    # 共享 hf-cache 卷（单一 volume `hf-cache:/data`，两服务共用，减少 28K->共享后零冗余）
+    image: ghcr.io/huggingface/text-embeddings-inference:120-1.9
+    # image: ghcr.io/huggingface/text-embeddings-inference:120-1.9@sha256:PLACEHOLDER_RERANKER_DIGEST
+    pull_policy: missing
+    command: --model-id BAAI/bge-reranker-v2-m3 --dtype float16 --max-batch-tokens 16384 --max-concurrent-requests 64
     ports:
       - "3002:80"
     volumes:
       - hf-cache:/data
       - /tmp/opencode:/tmp/opencode
     env_file: .env
+    environment:
+      - HF_HUB_OFFLINE=0
+      - CUDA_VISIBLE_DEVICES=0
     restart: unless-stopped
+    runtime: nvidia
+    shm_size: 1g
     deploy:
       resources:
         reservations:
@@ -35,7 +55,11 @@ services:
               capabilities: [gpu]
 
   reader:
+    # crawl4ai 为 CPU 密集 I/O，无需 GPU；增加 profiles 避免全量启动（默认不启动，需 --profile full/reader）
     image: unclecode/crawl4ai:latest
+    # pin digest 示例: unclecode/crawl4ai:0.6.3@sha256:PLACEHOLDER_CRAWL4AI_DIGEST
+    pull_policy: missing
+    profiles: ["full", "reader"]
     ports:
       - "3003:11235"
     volumes:
@@ -48,15 +72,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
+    # reader/crawl4ai 为 CPU 密集 I/O，无需 GPU，避免浪费显存；GPU 仅分配给 embeddings/reranker
 
   search:
+    # searxng 增加 profiles 避免全量启动（默认不启动，需 --profile full/search）
     image: searxng/searxng:latest
+    # pin digest 示例: searxng/searxng:2025.9.1@sha256:PLACEHOLDER_SEARXNG_DIGEST
+    pull_policy: missing
+    profiles: ["full", "search"]
     ports:
       - "8080:8080"
     volumes:
@@ -76,6 +99,8 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    # pin digest 示例: qdrant/qdrant:v1.13.2@sha256:PLACEHOLDER_QDRANT_DIGEST
+    pull_policy: missing
     ports:
       - "6333:6333"
       - "6334:6334"

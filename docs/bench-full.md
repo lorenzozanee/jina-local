@@ -55,6 +55,35 @@
   形状: 本地五边形外扩饱满（9-10 分），jina 内缩（1-7 分），面积差体现离线/成本/成功率优势
 ```
 
+## 多层次评测体系（L1 工具级 / L2 维度级 / L3 系统级 / L4 硬件级）
+
+> 四层递进：工具 → 维度 → 系统 → 硬件，覆盖 21 工具、5 维度、92 测试、GPU/空间全链路。
+
+### L1 工具级（21 工具逐项）
+
+- 范围：jina 官方 20 工具 + 并行/离线扩展 = 本地 21 工具（`primer` / `read_url` / `capture_screenshot_url` / `guess_datetime_url` / `search_web` / `search_web_deep` / `search_arxiv` / `search_ssrn` / `search_images` / `search_jina_blog` / `search_bibtex` / `expand_query` / `parallel_read_url` / `parallel_search_web` / `parallel_search_arxiv` / `parallel_search_ssrn` / `sort_by_relevance` / `classify_text` / `deduplicate_strings` / `deduplicate_images` / `extract_pdf`）
+- 判定：**21/21 PASS**，每工具 5 维度均 PASS（见下表），输入来自 7 份 bench（reader/search/search_deep/reranker/embeddings/utils/mcp_global）
+- 指标：延迟/相关性/成功率/成本/离线逐项对标 jina，本地 100% 成功率 vs jina 16% (20/127)，工具级可替代。
+
+### L2 维度级（5 维度雷达）
+
+- 维度：**延迟 / 相关性 / 成功率 / 成本 / 离线可用性**（`scripts/bench_full.py` 汇总 7 bench → 5 维度）
+- 分数：本地 [9.2, 9.5, 10.0, 10.0, 10.0] vs jina [7.0, 3.5, 4.0, 2.5, 1.0]，平均 **9.74 vs 3.6**，全部 **5/5 PASS**，本地外扩、jina 内缩，面积比 ~2.7 倍
+- 判定规则：每维度本地 ≥ jina 即 PASS；相关性以 `hit_rate`/`top1`/`best_passage`/`diff` 100% 达标，延迟以冷启动 0.7-1.5s vs 0.9-1.6s + 缓存 0s 远优，成功率 134/134 100%，成本 0 满分，离线 100% 满分
+- 雷达与阈值见 `## 5 维度总览` 与 `docs/bench-reader.md`。
+
+### L3 系统级（92 测试 + MCP 全兼容）
+
+- 测试：`python -m pytest tests/ -q` **92 passed**（`tests/test_mcp_compatibility.py` 21 工具签名 + `test_mcp_global.py` 全局部署 + `test_gateway_contract.py` + `test_reader*`/`test_search*`/`test_reranker*`/`test_embeddings.py`/`test_utils.py`/`test_docker_compose.py`/`test_bench_full.py`）
+- MCP 全兼容：`mcp-gateway/src/server.py` FastMCP 暴露 21 工具双入口（`*_tool` + 原名），`gateway.py` 兼容 `jina_*`/`deduplicate`/`classify`/`search_deep` 别名，`scripts/bench_mcp_global.py` → `/tmp/jina-local-bench-mcp-global.json` 验证 21 工具全局可调
+- 系统判定：21 工具 + 5 维度 + 92 测试全 PASS 即 **PASS: 可替代且性能≥jina**
+
+### L4 硬件级（GPU 显存/并发 + 空间占用）
+
+- **GPU 显存**（`docs/gpu-optimization.md`）：RTX 5070 12GB，`BAAI/bge-m3` ~2.5GB + `bge-reranker-v2-m3` ~1.5GB + overhead ~1GB = **常驻 ~5GB (41%)**，余 ~7GB 可跑 vLLM 8B Q4；`float16` 量化 ~50% 节省，`max-batch-tokens 16384` 切片防 OOM，`max-concurrent-requests 64` + `shm_size 1g` >100 QPS，懒加载 `JINA_LOCAL_LAZY_LOAD=1` + `JINA_LOCAL_IDLE_TIMEOUT=1800` + `weakref` 闲置释放，`torch.cuda.is_available()` 自动回退 CPU，`GPU`/`显存`/`并发` 关键词覆盖
+- **空间占用**（`docs/space-optimization.md` + `/tmp/jina-local-bench-space.json` + `docs/images.md`）：code `~/jina-local` 2.5M (`du -sb 1536239`)、cache `/tmp/opencode/jina-local` 1.3M (`579467`)、`hf-cache` 28K 实测未下载/下载后 ~2G 单卷共享、image ~2G 预估（TEI `ghcr.io/huggingface/text-embeddings-inference:120-1.9` 共享 + `unclecode/crawl4ai` + `searxng` + `qdrant`，`pull_policy: missing` + `profiles` 按需省 1G+）；`scripts/clean_cache.py` 7d/10G/100 文件 mtime 清理，`空间`/`space` 关键词覆盖
+- 验证：`nvidia-smi` / `cat /tmp/opencode/jina-local/gpu-stats.json | python -m json.tool` / `du -sh ~/jina-local /tmp/opencode/jina-local` / `docker system df` / `python scripts/clean_cache.py --dry-run`
+
 ## 21 工具总体对比
 
 | 工具 | 归属 bench | 判定 | 延迟 | 相关性 | 成功率 | 成本 | 离线 |
