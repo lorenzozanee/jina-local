@@ -1,0 +1,78 @@
+services:
+  embeddings:
+    # Blackwell 5070 需 ghcr.io/huggingface/text-embeddings-inference:120-1.9 标签，保留注释
+    image: ghcr.io/huggingface/text-embeddings-inference:1.9
+    command: --model-id BAAI/bge-m3 --dtype float16
+    ports:
+      - "3001:80"
+    volumes:
+      - hf-cache:/data
+      - /tmp/opencode:/tmp/opencode
+    env_file: .env
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:1.9
+    command: --model-id BAAI/bge-reranker-v2-m3 --dtype float16
+    ports:
+      - "3002:80"
+    volumes:
+      - hf-cache:/data
+      - /tmp/opencode:/tmp/opencode
+    env_file: .env
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+
+  reader:
+    image: unclecode/crawl4ai:latest
+    ports:
+      - "3003:11235"
+    volumes:
+      - /tmp/opencode:/tmp/opencode
+    env_file: .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+
+  search:
+    image: searxng/searxng:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng
+      - /tmp/opencode:/tmp/opencode
+    env_file: .env
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    read_only: true
+    tmpfs:
+      - /tmp
+
+volumes:
+  hf-cache:
