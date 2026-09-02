@@ -242,7 +242,9 @@ def _sigmoid(x: float) -> float:
 
 
 def _cache_key(query: str, doc: str) -> str:
-    raw = f"{_backend or 'unknown'}|||{_MODEL_ID}|||{query}|||{doc}"
+    backend = _backend or "unknown"
+    endpoint = _tei_url() if backend == "tei" else ""
+    raw = f"{backend}|||{_MODEL_ID}|||{endpoint}|||{query}|||{doc}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -287,12 +289,22 @@ def _tei_url() -> str:
 def _tei_rerank(query: str, documents: List[str]) -> List[float] | None:
     try:
         import requests
-        response = requests.post(_tei_url(), json={"query": query, "texts": documents}, timeout=float(os.getenv("JINA_LOCAL_TEI_TIMEOUT", "10")))
-        response.raise_for_status()
-        payload = response.json()
         scores = [0.0] * len(documents)
-        for item in payload:
-            scores[int(item["index"])] = max(0.0, min(1.0, float(item["score"])))
+        offset = 0
+        for batch in _batch_by_tokens_pairs(query, documents):
+            response = requests.post(
+                _tei_url(),
+                json={"query": query, "texts": batch},
+                timeout=float(os.getenv("JINA_LOCAL_TEI_TIMEOUT", "10")),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            for item in payload:
+                local_index = int(item["index"])
+                if not 0 <= local_index < len(batch):
+                    raise ValueError("TEI 返回索引越界")
+                scores[offset + local_index] = max(0.0, min(1.0, float(item["score"])))
+            offset += len(batch)
         return scores
     except Exception as exc:
         logger.warning("TEI reranker unavailable at %s: %s", _tei_url(), exc)

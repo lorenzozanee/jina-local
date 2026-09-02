@@ -388,7 +388,10 @@ def _get_dim() -> int:
 
 
 def _cache_path(text: str) -> pathlib.Path:
-    raw = f"{_backend or 'unknown'}|||{_model_name or 'tei'}|||{text}"
+    backend = _backend or "unknown"
+    model = _model_name or "tei"
+    endpoint = _tei_url() if backend == "tei" else ""
+    raw = f"{backend}|||{model}|||{endpoint}|||{text}"
     h = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return CACHE_DIR / f"embed-{h}.npy"
 
@@ -490,11 +493,21 @@ def embed(texts: list[str]) -> list[list[float]]:
     computed: dict[int, np.ndarray] = {}
     if to_compute_texts:
         if _backend == "tei":
-            vectors = _tei_embed(to_compute_texts)
-            if vectors is None:
-                raise RuntimeError("TEI 后端在初始化后不可用")
-            for idx, vec in zip(to_compute_idx, vectors):
-                computed[idx] = vec
+            vectors: list[np.ndarray] = []
+            tei_failed = False
+            for batch in _batch_by_tokens(to_compute_texts):
+                batch_vectors = _tei_embed(batch)
+                if batch_vectors is None:
+                    tei_failed = True
+                    break
+                vectors.extend(batch_vectors)
+            if tei_failed:
+                logger.warning("TEI embeddings failed during batch; using hash fallback")
+                for idx, txt in zip(to_compute_idx, to_compute_texts):
+                    computed[idx] = _hash_embed_one(txt, dim)
+            else:
+                for idx, vec in zip(to_compute_idx, vectors):
+                    computed[idx] = vec
         elif _backend == "hf" and _model is not None:
             # batch slicing by max_batch_tokens
             batches = _batch_by_tokens(to_compute_texts)
@@ -532,6 +545,7 @@ def embed(texts: list[str]) -> list[list[float]]:
 
 def embed_one(text: str) -> list[float]:
     _validate_one(text)
+    _init_backend()
     p = _cache_path(text)
     if p.exists():
         try:
