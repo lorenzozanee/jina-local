@@ -70,23 +70,33 @@ JINA_LOCAL_IDLE_TIMEOUT=1800    # 30min 闲置自动释放
 CACHE_DIR=/tmp/opencode/jina-local
 ```
 
-### 步骤 2 — 一键拉起推理栈
+### 步骤 2 — 按需拉起推理栈
+
+默认不让 Docker 自动重启任何服务，避免 TEI 模型和 Qdrant 常驻占用内存。Agent 开始对应 Web 任务时启动所需服务，任务结束后立即停止。
 
 ```bash
-# 仅核心推理（默认，节省 1G+）：embeddings + reranker + qdrant
-docker compose up -d
+# Embeddings/Reranker/向量检索任务
+docker compose up -d embeddings reranker qdrant
 
-# 全量（含 reader/search，需 --profile full）
+# 需要 Reader 或 Search 的任务
+docker compose --profile reader up -d reader
+docker compose --profile search up -d search
+
+# 全量任务（仅任务期间使用）
 docker compose --profile full up -d
+
+# 结束任务：停止高内存服务；无需删除模型缓存或 Qdrant 数据卷
+docker compose stop embeddings reranker reader search qdrant
 
 # 验证
 docker compose ps
-curl http://localhost:3001/health  # embeddings TEI
-curl http://localhost:3002/health  # reranker TEI
-python -m pytest tests/ -q          # 92 passed 预期
+auto_stop=./scripts/stop-idle-jina-local.sh
+[ -x "$auto_stop" ] && "$auto_stop"
 ```
 
-`docker-compose.yml` 要点（见 [docker-compose.yml](docker-compose.yml)）：5 服务（embeddings/reranker/reader/search/qdrant），共享单一 `hf-cache:/data` 卷，`pull_policy: missing`，`profiles: ["full","reader","search"]` 按需启动，`runtime: nvidia` + `deploy.resources.reservations.devices` 双配置兼容新旧 compose。
+Agent 生命周期规则：启动前检查 `docker compose ps`，只启动当前任务需要的服务；完成或失败退出前执行停止命令。不要使用 `docker compose up -d` 作为后台常驻服务，不要修改 `restart: 'no'`。TEI Embeddings/Reranker 是高内存服务，Reader/Search/Qdrant 也不应无人使用时常驻。
+
+`docker-compose.yml` 要点（见 [docker-compose.yml](docker-compose.yml)）：5 服务、共享单一 `hf-cache:/data` 卷、无自动重启、`profiles: ["full","reader","search"]` 按需启动，`runtime: nvidia` + `deploy.resources.reservations.devices` 双配置兼容新旧 compose。
 
 ### 步骤 3 — 配置 MCP（多 Agent 通用，一键接入）
 

@@ -46,18 +46,24 @@ docker inspect --format='{{index .RepoDigests 0}}' qdrant/qdrant:latest
 
 ## 按需启动示例
 
+所有服务均设置 `restart: 'no'`，只在 Agent 执行对应任务期间运行；任务结束后由 Agent 停止服务。
+
 ```bash
-# 仅核心推理（默认，不含 reader/search，节省启动时间与内存）
+# Embeddings/Reranker/Qdrant 任务
 docker compose up -d embeddings reranker qdrant
 
-# 全量（含 reader/search）
+# Reader 或 Search 任务
+docker compose --profile reader up -d reader
+docker compose --profile search up -d search
+
+# 全量任务（仅任务期间使用）
 docker compose --profile full up -d
 
-# 仅 reader
-docker compose --profile reader up -d reader
+# 任务结束后停止全部服务
+docker compose stop embeddings reranker reader search qdrant
 
-# 仅 search
-docker compose --profile search up -d search
+# 清理空闲的 TEI 服务（仅停止，不删除缓存/数据卷）
+./scripts/stop-idle-jina-local.sh
 ```
 
 ## 空间预估

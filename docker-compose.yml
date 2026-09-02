@@ -20,7 +20,7 @@ services:
     volumes:
       - hf-cache:/data
       - /tmp/opencode:/tmp/opencode
-    restart: unless-stopped
+    restart: 'no'
     runtime: nvidia
     shm_size: 1g
     deploy:
@@ -49,7 +49,7 @@ services:
     volumes:
       - hf-cache:/data
       - /tmp/opencode:/tmp/opencode
-    restart: unless-stopped
+    restart: 'no'
     runtime: nvidia
     shm_size: 1g
     deploy:
@@ -70,7 +70,7 @@ services:
     volumes:
       - /tmp/opencode:/tmp/opencode
     env_file: .env
-    restart: unless-stopped
+    restart: 'no'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
       interval: 30s
@@ -91,7 +91,7 @@ services:
       - ./searxng:/etc/searxng
       - /tmp/opencode:/tmp/opencode
     env_file: .env
-    restart: unless-stopped
+    restart: 'no'
     cap_drop:
       - ALL
     cap_add:
@@ -113,7 +113,7 @@ services:
       - qdrant-storage:/qdrant/storage
       - /tmp/opencode:/tmp/opencode
     env_file: .env
-    restart: unless-stopped
+    restart: 'no'
 
 volumes:
   hf-cache:
