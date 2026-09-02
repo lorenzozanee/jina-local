@@ -67,6 +67,32 @@ except ImportError:
     except ImportError:
         _search_deep = None  # type: ignore
 
+try:
+    from .utils import deduplicate_strings as _dedup_strings
+    from .utils import deduplicate_images as _dedup_images
+    from .utils import classify_text as _classify_text
+    from .utils import expand_query as _expand_query
+    from .utils import extract_pdf as _extract_pdf
+    from .utils import guess_datetime_url as _guess_dt
+    from .utils import primer as _primer
+except ImportError:
+    try:
+        from utils import deduplicate_strings as _dedup_strings  # type: ignore
+        from utils import deduplicate_images as _dedup_images  # type: ignore
+        from utils import classify_text as _classify_text  # type: ignore
+        from utils import expand_query as _expand_query  # type: ignore
+        from utils import extract_pdf as _extract_pdf  # type: ignore
+        from utils import guess_datetime_url as _guess_dt  # type: ignore
+        from utils import primer as _primer  # type: ignore
+    except ImportError:
+        _dedup_strings = None  # type: ignore
+        _dedup_images = None  # type: ignore
+        _classify_text = None  # type: ignore
+        _expand_query = None  # type: ignore
+        _extract_pdf = None  # type: ignore
+        _guess_dt = None  # type: ignore
+        _primer = None  # type: ignore
+
 
 def read_url(url: str, question: str | None = None, chunk_size: int = 100, top_k: int = 3) -> str:
     """生产级 read_url，委托给 reader.py（双抽取+question+缓存+严格校验）"""
@@ -259,6 +285,60 @@ def search_web_deep(query: str, num: int = 5, chunk_size: int = 100, **kwargs) -
         return _search_deep(query, num=num, chunk_size=chunk_size, **kwargs)
     raise RuntimeError("search_deep 模块未加载")
 
+
+def deduplicate_strings(strings: list[str], top_k: int | None = None, threshold: float = 0.85, **kwargs) -> list[str]:
+    """委托 utils.deduplicate_strings"""
+    if _dedup_strings is not None:
+        return _dedup_strings(strings, top_k=top_k, threshold=threshold, **kwargs)
+    raise RuntimeError("utils 模块未加载")
+
+
+def deduplicate_images(images: list[str], top_k: int | None = None, threshold: float = 0.85, **kwargs) -> list[str]:
+    if _dedup_images is not None:
+        return _dedup_images(images, top_k=top_k, threshold=threshold, **kwargs)
+    raise RuntimeError("utils 模块未加载")
+
+
+def classify_text(texts: list[str], labels: list[str], **kwargs) -> list[dict]:
+    if _classify_text is not None:
+        return _classify_text(texts, labels, **kwargs)
+    raise RuntimeError("utils 模块未加载")
+
+
+def expand_query(query: str, num: int = 3, **kwargs) -> list[str]:
+    if _expand_query is not None:
+        return _expand_query(query, num=num, **kwargs)
+    raise RuntimeError("utils 模块未加载")
+
+
+def extract_pdf(url: str, **kwargs) -> dict:
+    if _extract_pdf is not None:
+        return _extract_pdf(url, **kwargs)
+    raise RuntimeError("utils 模块未加载")
+
+
+def guess_datetime_url(url: str, **kwargs) -> dict:
+    if _guess_dt is not None:
+        return _guess_dt(url, **kwargs)
+    raise RuntimeError("utils 模块未加载")
+
+
+def primer(**kwargs) -> dict:
+    if _primer is not None:
+        return _primer(**kwargs)
+    raise RuntimeError("utils 模块未加载")
+
+
+# aliases for jina / additional compatibility
+deduplicate = deduplicate_strings
+classify = classify_text
+jina_deduplicate_strings = deduplicate_strings
+jina_deduplicate_images = deduplicate_images
+jina_classify_text = classify_text
+jina_expand_query = expand_query
+jina_extract_pdf = extract_pdf
+jina_guess_datetime_url = guess_datetime_url
+jina_primer = primer
 
 # alias for jina compatibility
 search_deep = search_web_deep

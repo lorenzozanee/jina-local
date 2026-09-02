@@ -6,10 +6,23 @@ except ImportError as _e:  # pragma: no cover
     FastMCP = None  # type: ignore
 
 try:
-    from .gateway import read_url, search_web, sort_by_relevance, parallel_search_web, search_web_deep
+    from .gateway import (
+        read_url,
+        search_web,
+        sort_by_relevance,
+        parallel_search_web,
+        search_web_deep,
+        deduplicate_strings,
+        deduplicate_images,
+        classify_text,
+        expand_query,
+        extract_pdf,
+        guess_datetime_url,
+        primer,
+    )
 except ImportError:
     try:
-        from gateway import read_url, search_web, sort_by_relevance, parallel_search_web, search_web_deep  # type: ignore
+        from gateway import read_url, search_web, sort_by_relevance, parallel_search_web, search_web_deep, deduplicate_strings, deduplicate_images, classify_text, expand_query, extract_pdf, guess_datetime_url, primer  # type: ignore
     except ImportError:  # fallback for direct file execution without package context
         import importlib.util
         import pathlib as _pl
@@ -24,6 +37,13 @@ except ImportError:
         sort_by_relevance = _gw.sort_by_relevance  # type: ignore
         parallel_search_web = getattr(_gw, "parallel_search_web", None)  # type: ignore
         search_web_deep = getattr(_gw, "search_web_deep", None)  # type: ignore
+        deduplicate_strings = getattr(_gw, "deduplicate_strings", None)  # type: ignore
+        deduplicate_images = getattr(_gw, "deduplicate_images", None)  # type: ignore
+        classify_text = getattr(_gw, "classify_text", None)  # type: ignore
+        expand_query = getattr(_gw, "expand_query", None)  # type: ignore
+        extract_pdf = getattr(_gw, "extract_pdf", None)  # type: ignore
+        guess_datetime_url = getattr(_gw, "guess_datetime_url", None)  # type: ignore
+        primer = getattr(_gw, "primer", None)  # type: ignore
         if parallel_search_web is None:
             # fallback via search module
             try:
@@ -35,6 +55,41 @@ except ImportError:
                 from search_deep import search_web_deep as search_web_deep  # type: ignore
             except ImportError:
                 search_web_deep = None  # type: ignore
+        if deduplicate_strings is None:
+            try:
+                from utils import deduplicate_strings as deduplicate_strings  # type: ignore
+            except ImportError:
+                deduplicate_strings = None  # type: ignore
+        if deduplicate_images is None:
+            try:
+                from utils import deduplicate_images as deduplicate_images  # type: ignore
+            except ImportError:
+                deduplicate_images = None  # type: ignore
+        if classify_text is None:
+            try:
+                from utils import classify_text as classify_text  # type: ignore
+            except ImportError:
+                classify_text = None  # type: ignore
+        if expand_query is None:
+            try:
+                from utils import expand_query as expand_query  # type: ignore
+            except ImportError:
+                expand_query = None  # type: ignore
+        if extract_pdf is None:
+            try:
+                from utils import extract_pdf as extract_pdf  # type: ignore
+            except ImportError:
+                extract_pdf = None  # type: ignore
+        if guess_datetime_url is None:
+            try:
+                from utils import guess_datetime_url as guess_datetime_url  # type: ignore
+            except ImportError:
+                guess_datetime_url = None  # type: ignore
+        if primer is None:
+            try:
+                from utils import primer as primer  # type: ignore
+            except ImportError:
+                primer = None  # type: ignore
 
 if FastMCP is not None:
     mcp = FastMCP("jina-local-gateway")
@@ -64,12 +119,47 @@ if FastMCP is not None:
         """Search deep wrapper over gateway.search_web_deep."""
         return search_web_deep(query, num=num, chunk_size=chunk_size)
 
+    @mcp.tool()
+    def deduplicate_strings_tool(strings: list[str], top_k: int | None = None) -> list[str]:
+        return deduplicate_strings(strings, top_k=top_k)
+
+    @mcp.tool()
+    def deduplicate_images_tool(images: list[str], top_k: int | None = None) -> list[str]:
+        return deduplicate_images(images, top_k=top_k)
+
+    @mcp.tool()
+    def classify_text_tool(texts: list[str], labels: list[str]) -> list[dict]:
+        return classify_text(texts, labels)
+
+    @mcp.tool()
+    def expand_query_tool(query: str, num: int = 3) -> list[str]:
+        return expand_query(query, num=num)
+
+    @mcp.tool()
+    def extract_pdf_tool(url: str) -> dict:
+        return extract_pdf(url)
+
+    @mcp.tool()
+    def guess_datetime_url_tool(url: str) -> dict:
+        return guess_datetime_url(url)
+
+    @mcp.tool()
+    def primer_tool() -> dict:
+        return primer()
+
     # 同时直接暴露原始函数名以兼容 jina 工具名
     mcp.tool()(read_url)
     mcp.tool()(search_web)
     mcp.tool()(parallel_search_web)
     mcp.tool()(sort_by_relevance)
     mcp.tool()(search_web_deep)
+    mcp.tool()(deduplicate_strings)
+    mcp.tool()(deduplicate_images)
+    mcp.tool()(classify_text)
+    mcp.tool()(expand_query)
+    mcp.tool()(extract_pdf)
+    mcp.tool()(guess_datetime_url)
+    mcp.tool()(primer)
 
     def main() -> None:
         mcp.run()
@@ -83,4 +173,4 @@ else:  # fallback when mcp not installed
         raise RuntimeError("mcp>=1.0 未安装，无法启动 FastMCP server，请先 pip install mcp")
 
     # 保留原始函数可直接调用
-    __all__ = ["read_url", "search_web", "sort_by_relevance", "search_web_deep", "mcp", "main"]
+    __all__ = ["read_url", "search_web", "sort_by_relevance", "search_web_deep", "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf", "guess_datetime_url", "primer", "mcp", "main"]
