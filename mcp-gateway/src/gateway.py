@@ -20,6 +20,17 @@ except ImportError:
         _reader_parallel = None  # type: ignore
         _CACHE_DIR = None  # type: ignore
 
+try:
+    from .search import search_web as _search_search_web
+    from .search import parallel_search_web as _search_parallel
+except ImportError:
+    try:
+        from search import search_web as _search_search_web  # type: ignore
+        from search import parallel_search_web as _search_parallel  # type: ignore
+    except ImportError:
+        _search_search_web = None  # type: ignore
+        _search_parallel = None  # type: ignore
+
 
 def read_url(url: str, question: str | None = None, chunk_size: int = 100, top_k: int = 3) -> str:
     """生产级 read_url，委托给 reader.py（双抽取+question+缓存+严格校验）"""
@@ -70,12 +81,24 @@ def parallel_read_url(urls: list[str], question: str | None = None, max_workers:
     return [read_url(u, question=question) for u in urls]
 
 
-def search_web(query: str) -> list[dict]:
-    """Return list[dict] with title/url/content for the query."""
+def search_web(query: str, num: int = 5, **kwargs) -> list[dict]:
+    """委托 search.py 的真实聚合，兼容 jina search_web(query, num=5) 签名"""
+    # 兼容 top_k/limit 别名
+    if "top_k" in kwargs and kwargs["top_k"] is not None:
+        try:
+            num = int(kwargs["top_k"])
+        except Exception:
+            pass
+    if "limit" in kwargs and kwargs["limit"] is not None:
+        try:
+            num = int(kwargs["limit"])
+        except Exception:
+            pass
+    if _search_search_web is not None:
+        return _search_search_web(query, num=num)
+    # fallback minimal (should not happen after search.py exists)
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query 必须为非空字符串")
-    # minimal mock that satisfies contract
-    # include query in content to show relevance
     return [
         {
             "title": f"mock result for {query}",
@@ -88,6 +111,15 @@ def search_web(query: str) -> list[dict]:
             "content": f"additional mock content for {query}",
         },
     ]
+
+
+def parallel_search_web(queries: list[str], num: int = 5) -> list[list[dict]]:
+    """并发批量 search_web，委托 search.py"""
+    if _search_parallel is not None:
+        return _search_parallel(queries, num=num)
+    if not isinstance(queries, list):
+        raise TypeError("queries 必须为 list[str]")
+    return [search_web(q, num=num) for q in queries]
 
 
 def sort_by_relevance(query: str, documents: list[str]) -> list[dict]:

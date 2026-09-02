@@ -6,10 +6,10 @@ except ImportError as _e:  # pragma: no cover
     FastMCP = None  # type: ignore
 
 try:
-    from .gateway import read_url, search_web, sort_by_relevance
+    from .gateway import read_url, search_web, sort_by_relevance, parallel_search_web
 except ImportError:
     try:
-        from gateway import read_url, search_web, sort_by_relevance  # type: ignore
+        from gateway import read_url, search_web, sort_by_relevance, parallel_search_web  # type: ignore
     except ImportError:  # fallback for direct file execution without package context
         import importlib.util
         import pathlib as _pl
@@ -22,6 +22,13 @@ except ImportError:
         read_url = _gw.read_url  # type: ignore
         search_web = _gw.search_web  # type: ignore
         sort_by_relevance = _gw.sort_by_relevance  # type: ignore
+        parallel_search_web = getattr(_gw, "parallel_search_web", None)  # type: ignore
+        if parallel_search_web is None:
+            # fallback via search module
+            try:
+                from search import parallel_search_web as parallel_search_web  # type: ignore
+            except ImportError:
+                parallel_search_web = None  # type: ignore
 
 if FastMCP is not None:
     mcp = FastMCP("jina-local-gateway")
@@ -32,9 +39,14 @@ if FastMCP is not None:
         return read_url(url)
 
     @mcp.tool()
-    def search_web_tool(query: str) -> list[dict]:
+    def search_web_tool(query: str, num: int = 5) -> list[dict]:
         """Search web wrapper over gateway.search_web."""
-        return search_web(query)
+        return search_web(query, num=num)
+
+    @mcp.tool()
+    def parallel_search_web_tool(queries: list[str], num: int = 5) -> list[list[dict]]:
+        """Parallel search wrapper over gateway.parallel_search_web."""
+        return parallel_search_web(queries, num=num)
 
     @mcp.tool()
     def sort_by_relevance_tool(query: str, documents: list[str]) -> list[dict]:
@@ -44,6 +56,7 @@ if FastMCP is not None:
     # 同时直接暴露原始函数名以兼容 jina 工具名
     mcp.tool()(read_url)
     mcp.tool()(search_web)
+    mcp.tool()(parallel_search_web)
     mcp.tool()(sort_by_relevance)
 
     def main() -> None:
