@@ -115,9 +115,9 @@
 - 范围：延迟、相关性、成功率、成本、离线可用性。
 - 结果：**5/5** 维度 PASS，见上方雷达文字与分数。
 
-### L3 系统级（92 tests + MCP）
+### L3 系统级（125 tests + MCP）
 
-- 范围：92 项 pytest 测试、MCP `initialize`/`tools/list`/`tools/call`、全局配置与 Docker Compose 配置。
+- 范围：125 项 pytest 测试、MCP `initialize`/`tools/list`/`tools/call`、全局配置与 Docker Compose 配置。
 - 结果：MCP 规范工具清单 **22/22**，调用链路可用。
 
 ### L4 硬件级（GPU、并发与空间）

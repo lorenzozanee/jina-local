@@ -84,7 +84,7 @@ JINA_LOCAL_IDLE_TIMEOUT=2 python -c "import sys,time; sys.path.insert(0,'mcp-gat
 cat /tmp/opencode/jina-local/gpu-stats.json | python -c "import json,pathlib; d=json.loads(pathlib.Path('/tmp/opencode/jina-local/gpu-stats.json').read_text()); print([h['stage'] for h in d.get('history',[])][-5:])"
 ```
 
-## 验证步骤 (TDD 保持 92 通过)
+## 验证步骤 (TDD 保持 125 通过)
 
 ```bash
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu')"

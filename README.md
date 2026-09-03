@@ -1,8 +1,10 @@
 # jina-local
 
+![jina-local](docs/jina-local.svg)
+
 > 系统全局本地化替代 `jina.ai` 的 Reader / Search / Reranker / Embeddings 能力，供所有 OpenCode Agent 通过 MCP (Model Context Protocol) 统一调用 — 零余额依赖、离线可用、成本为 0。
 
-[![21 Tools](https://img.shields.io/badge/Tools-21%20PASS-brightgreen)](#替代对照表21-工具)](docs/bench-full.md) [![5 Dimensions PASS](https://img.shields.io/badge/Dimensions-5%2F5%20PASS-brightgreen)](#性能对比5-维度雷达--92-测试)](docs/bench-full.md) [![GPU RTX 5070](https://img.shields.io/badge/GPU-RTX%205070%2012GB%20Blackwell-blue)](#显存预算rtx-5070-12gb-docsgpu-optimizationmd) [![Offline](https://img.shields.io/badge/Offline-%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-success)](#性能对比5-维度雷达--92-测试) [![Tests 92 passed](https://img.shields.io/badge/tests-92%20passed-brightgreen)](#开发指南) [![License MIT](https://img.shields.io/badge/License-MIT-yellow)](#许可证)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue)](.github/workflows/ci.yml) [![22 Tools](https://img.shields.io/badge/Tools-22%20PASS-brightgreen)](#替代对照表22-工具)](docs/bench-full.md) [![5 Dimensions PASS](https://img.shields.io/badge/Dimensions-5%2F5%20PASS-brightgreen)](#性能对比5-维度雷达--125-测试)](docs/bench-full.md) [![GPU RTX 5070](https://img.shields.io/badge/GPU-RTX%205070%2012GB%20Blackwell-blue)](#显存预算rtx-5070-12gb-docsgpu-optimizationmd) [![Offline](https://img.shields.io/badge/Offline-%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-success)](#性能对比5-维度雷达--125-测试) [![Tests 125 passed](https://img.shields.io/badge/tests-125%20passed-brightgreen)](#开发指南) [![License MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE) [![Security Policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 
 ---
 
@@ -13,10 +15,12 @@
 - [多 Agent 接入（Claude Code/OpenClaw/Hermes/Codex/Opencode 通用）](#多-agent-接入claude-codeopenclawhermescodexopencode-通用)
 - [架构](#架构)
 - [替代对照表（22 工具）](#替代对照表22-工具)
-- [性能对比（5 维度雷达 + 92 测试）](#性能对比5-维度雷达--92-测试)
+- [性能对比（5 维度雷达 + 125 测试）](#性能对比5-维度雷达--125-测试)
 - [显存与空间预算](#显存与空间预算)
 - [目录结构](#目录结构)
 - [开发指南](#开发指南)
+- [贡献](CONTRIBUTING.md)
+- [安全](SECURITY.md)
 - [常见问题](#常见问题-faq)
 - [许可证](#许可证)
 
@@ -307,7 +311,7 @@ python scripts/setup_mcp.py --agent all
 flowchart TB
     Agent["OpenCode Agent<br/>(opencode run --pure --agent build)"]
 
-    Agent -->|MCP stdio / Streamable HTTP| Gateway["MCP Gateway<br/>mcp-gateway/src/server.py<br/>mcp-gateway/src/gateway.py<br/>21 Tools 兼容层<br/>CPU"]
+    Agent -->|MCP stdio / Streamable HTTP| Gateway["MCP Gateway<br/>mcp-gateway/src/server.py<br/>mcp-gateway/src/gateway.py<br/>22 Tools 兼容层<br/>CPU"]
 
     Gateway --> Reader["Reader<br/>mcp-gateway/src/reader.py<br/>trafilatura + readability-lxml<br/>+ BeautifulSoup 双抽取<br/>/tmp/opencode 缓存<br/>CPU"]
     Gateway --> Search["Search<br/>mcp-gateway/src/search.py<br/>SearXNG → DuckDuckGo / Bing<br/>聚合 + 去重 + 缓存<br/>CPU"]
@@ -371,12 +375,13 @@ flowchart TB
 | 19 | Deduplicate Strings — 文本去重 | `jina_deduplicate_strings` | `deduplicate_strings(strings, top_k?, threshold?)` | `utils.py` | embedding 余弦相似度阈值去重 |
 | 20 | Deduplicate Images — 图像去重 | `jina_deduplicate_images` | `deduplicate_images(images, top_k?, threshold?)` | `utils.py` | 同上（URL/特征去重） |
 | 21 | Extract PDF — PDF 抽取 | `jina_extract_pdf` | `extract_pdf(url)` | `utils.py` | 本地 PDF 解析 + 清洗 |
+| 22 | Embeddings — 文本向量 | `jina_embeddings` / `embeddings` | `embeddings(texts)` | `embeddings.py` | TEI / SentenceTransformers，CPU hash fallback |
 
 > 兼容别名：`gateway.py` 另暴露 `deduplicate`/`classify`/`jina_*` / `search_deep` 等内部别名（见 `gateway.py`），`server.py` 只注册规范工具名，避免重复发现和 schema 漂移。
 
 ---
 
-## 性能对比（5 维度雷达 + 92 测试）
+## 性能对比（5 维度雷达 + 125 测试）
 
 > 详见 [docs/bench-full.md](docs/bench-full.md)（`scripts/bench_full.py` 汇总 7 份 bench → `/tmp/jina-local-bench-full.json`）与 [docs/bench-reader.md](docs/bench-reader.md)。
 
@@ -438,7 +443,7 @@ flowchart TB
 
 ```bash
 python -m pytest tests/ -q
-# 92 passed, 1 warning in ~5s
+# 125 passed, 4 skipped in ~4s
 ```
 
 | 测试文件 | 覆盖 |
@@ -523,7 +528,7 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
 │       ├── reranker.py                # Reranker：bge-reranker-v2-m3 / CrossEncoder / cosine fallback，懒加载+批处理
 │       ├── utils.py                   # Utils：deduplicate_*/classify/expand/extract_pdf/guess_datetime/primer
 │       └── search_academic.py         # Academic：arxiv/ssrn/bibtex/images/jina_blog/capture_screenshot
-├── tests/                             # 92 tests，TDD 契约 + 扩展
+├── tests/                             # 125 tests，TDD 契约 + 扩展
 │   ├── test_mcp_compatibility.py      # 22 工具暴露与签名
 │   ├── test_mcp_global.py             # 全局部署校验
 │   ├── test_gateway_contract.py       # Gateway 委托
@@ -551,7 +556,12 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
     ├── bench-reader.md                # Reader 5 URL 真机对标
     ├── gpu-optimization.md            # 12GB 显存预算 + 并发 + 懒加载
     ├── space-optimization.md          # du 实测 + 4 类大小汇总
-    └── images.md                      # 镜像版本表 + digest pin + pull_policy
+    ├── images.md                      # 镜像版本表 + digest pin + pull_policy
+    └── jina-local.svg                 # README 项目图
+├── LICENSE                            # MIT 许可证
+├── SECURITY.md                        # 安全策略与部署边界
+├── CONTRIBUTING.md                    # 开发与 PR 约定
+└── CODE_OF_CONDUCT.md                 # 社区行为准则
 ```
 
 ---
@@ -563,7 +573,7 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
 本项目遵循 TDD：先 `tests/` 契约与扩展测试，再 `mcp-gateway/src/*.py` 实现。
 
 ```bash
-# 单测 — 92 passed 预期
+# 单测 — 125 passed 预期
 python -m pytest tests/ -q
 python -m pytest tests/test_reader_extended.py tests/test_reranker_extended.py -v
 python -m pytest tests/test_mcp_compatibility.py -v  # 22 工具签名
@@ -627,7 +637,7 @@ nvidia-smi
 ## 常见问题 (FAQ)
 
 **Q: 无 GPU 能否运行？**  
-A: 可以。`torch.cuda.is_available()` 自动检测，无 GPU 时 `embeddings.py`/`reranker.py` 回退为 hash TF + L2 归一 / 余弦重排，`/tmp/opencode` 缓存仍可用，`pytest` 92 passed 与 bench 仍 PASS（相关性略降但成功率/成本/离线满分）。`JINA_LOCAL_USE_GPU=0` 可强制 CPU 调试。
+A: 可以。`torch.cuda.is_available()` 自动检测，无 GPU 时 `embeddings.py`/`reranker.py` 回退为 hash TF + L2 归一 / 余弦重排，`/tmp/opencode` 缓存仍可用，`pytest` 125 passed 与 bench 仍 PASS（相关性略降但成功率/成本/离线满分）。`JINA_LOCAL_USE_GPU=0` 可强制 CPU 调试。
 
 **Q: 模型首次下载很慢/离线如何？**  
 A: `docker-compose.yml` 中 `HF_HUB_OFFLINE=0` 允许 TEI 拉模型到共享 `hf-cache:/data`（约 2–3G）；下载后 `HF_HUB_OFFLINE=1` 可离线启动。模型未下载时本地 Python 端仍可用 fallback，不阻塞测试。
@@ -657,7 +667,7 @@ A: 禁止。全局路径固定 `~/jina-local`，worktree 随分支删除会丢�
 
 ## 许可证
 
-MIT — 本项目采用 MIT 许可证。若仓库未附 `LICENSE` 文件，按 MIT 条款处理。
+MIT — 本项目采用 MIT 许可证，完整条款见 [LICENSE](LICENSE)。
 
 ---
 

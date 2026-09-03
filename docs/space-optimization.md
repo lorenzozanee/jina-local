@@ -59,7 +59,7 @@ $ cat /tmp/jina-local-bench-space.json | python -m json.tool
 
 ```bash
 python -m pytest tests/ -q
-# 92 passed, 1 warning
+# 125 passed, 4 skipped
 
 python scripts/clean_cache.py --dry-run
 # [clean] total 0.55MB -> 0.55MB, deleted 0 files, kept 267 (incl 100 most recent + 2 protected)

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">jina-local</title>
+  <desc id="desc">jina-local project wordmark</desc>
+  <rect width="1200" height="420" fill="#171a21"/>
+  <rect x="120" y="310" width="960" height="6" rx="3" fill="#4da3ff"/>
+  <text x="600" y="245" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="112" font-weight="700" letter-spacing="0" text-anchor="middle">jina-local</text>
+</svg>

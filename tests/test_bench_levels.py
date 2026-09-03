@@ -3,7 +3,7 @@
 校验 docs/bench-full.md 已显式分为四层：
 - L1 工具级（22 工具逐项）
 - L2 维度级（5 维度雷达）
-- L3 系统级（92 测试 + MCP 全兼容）
+- L3 系统级（125 测试 + MCP 全兼容）
 - L4 硬件级（GPU 显存/并发 + 空间占用）
 
 对应 AGENTS.md 第7节与 issue-4 要求，若缺 L4 需追加硬件级章节引用 docs/gpu-optimization.md 与 space 数据。
@@ -77,10 +77,10 @@ def test_l2_dimension_level_present():
 
 
 def test_l3_system_level_present():
-    """L3 系统级：含 92 测试 + MCP 全兼容、L3 标记"""
+    """L3 系统级：含 125 测试 + MCP 全兼容、L3 标记"""
     t = _text()
     assert "L3" in t and "系统级" in t, "bench-full.md 缺 L3 系统级标题"
-    assert "92" in t, "bench-full.md 缺 92 测试数"
+    assert "125" in t, "bench-full.md 缺 125 测试数"
     assert "passed" in t or "通过" in t, "bench-full.md 缺 passed/通过说明"
     # MCP 全兼容关键词
     assert "MCP" in t, "bench-full.md L3 缺 MCP 关键词"
