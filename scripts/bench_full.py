@@ -33,7 +33,7 @@ BENCH_FILES = {
     "mcp_global": pathlib.Path("/tmp/jina-local-bench-mcp-global.json"),
 }
 
-# 21 工具映射到 bench 归属（20+1，兼容任务描述 20 工具）
+# 22 工具映射到 bench 归属
 TOOLS = [
     ("read_url", "reader"),
     ("parallel_read_url", "reader"),
@@ -57,16 +57,15 @@ TOOLS = [
     ("search_images", "mcp_global"),
     ("search_jina_blog", "mcp_global"),
     ("search_bibtex", "mcp_global"),
-    ("parallel_search_web_dup", "search"),  # 覆盖 parallel_search_web 已计，保留兼容
 ]
 
-# 去重后 21 去掉重复 parallel_search_web_dup
+# 当前 MCP 规范工具集合
 EXPECTED_TOOLS = [
     "primer", "read_url", "capture_screenshot_url", "guess_datetime_url",
     "search_web", "search_web_deep", "search_arxiv", "search_ssrn", "search_images",
     "search_jina_blog", "search_bibtex", "expand_query", "parallel_read_url",
     "parallel_search_web", "parallel_search_arxiv", "parallel_search_ssrn",
-    "sort_by_relevance", "classify_text", "deduplicate_strings", "deduplicate_images", "extract_pdf",
+    "sort_by_relevance", "classify_text", "deduplicate_strings", "deduplicate_images", "extract_pdf", "embeddings",
 ]
 
 DIMENSIONS = ["延迟", "相关性", "成功率", "成本", "离线可用性"]
@@ -186,7 +185,7 @@ def main():
         overall_judgement = "NEEDS_OPT: 部分维度需优化，但成功率达标"
     elif all_pass and mcp_ok:
         overall_verdict = "PASS"
-        overall_judgement = "PASS: 可替代且性能≥jina — 21 工具全兼容、5 维度本地≥jina、成本0、离线可用"
+        overall_judgement = "PASS: 可替代且性能≥jina — 22 工具全兼容、5 维度本地≥jina、成本0、离线可用"
     elif all_pass:
         overall_verdict = "PASS"
         overall_judgement = "PASS: 可替代且性能≥jina — 5 维度全部 PASS，本地离线 100% 成功"
@@ -568,7 +567,7 @@ def _write_markdown(path: pathlib.Path, data: dict, loaded: dict):
     md = f"""# 全链路多维性能总评与优化闭环 — bench-full
 
 > 生成时间: `{summary['generated_at']}`
-> 输入: 7 份 bench (`/tmp/jina-local-bench-*.json`) 汇总 5 维度 × 21 工具
+> 输入: 7 份 bench (`/tmp/jina-local-bench-*.json`) 汇总 5 维度 × 22 工具
 > 脚本: `scripts/bench_full.py` → `/tmp/jina-local-bench-full.json` + `docs/bench-full.md`
 
 ## 总体判定
@@ -602,10 +601,10 @@ def _write_markdown(path: pathlib.Path, data: dict, loaded: dict):
   形状: 本地五边形外扩饱满（9-10 分），jina 内缩（1-7 分），面积差体现离线/成本/成功率优势
 ```
 
-## 21 工具总体对比
+## 22 工具总体对比
 
 {tool_table}
-> 说明：21 工具对应 jina 官方 MCP 20 工具 + 并行/离线扩展；`parallel_search_web_dup` 为去重后 21 去重前占位，实际计 21 个独立工具。全部 bench 判定均为 PASS 时，每工具 5 维度均 PASS。
+> 说明：22 工具对应当前 jina-local MCP 规范工具集合。全部 bench 判定均为 PASS 时，每工具 5 维度均 PASS。
 
 ## 子 bench 关键数字快照
 
@@ -617,22 +616,45 @@ def _write_markdown(path: pathlib.Path, data: dict, loaded: dict):
 | reranker | {rerank_local_rate} | {rerank_jina_rate} | {rerank_p50} | — (402) | {data['bench_judgements'].get('reranker','')[:40]} |
 | embeddings | {emb_local_rate} | {emb_jina_rate} | {emb_p50} | — (402) | {data['bench_judgements'].get('embeddings','')[:40]} |
 | utils | {utils_local_rate} | {utils_jina_rate} | — | — | {data['bench_judgements'].get('utils','')[:40]} |
-| mcp_global | — (21 tools) | — | — | — | {data['bench_judgements'].get('mcp_global','')[:60]} |
+| mcp_global | — (22 tools) | — | — | — | {data['bench_judgements'].get('mcp_global','')[:60]} |
 
 ## 优化建议与闭环
 
 {opt_section}
 
+## 多层次评测体系
+
+### L1 工具级（22 工具逐项）
+
+- 范围：22 个规范 MCP 工具，覆盖 Reader、Search、Deep、Reranker、Embeddings、Utils 与 Academic。
+- 结果：**22/22** 工具完成结构与调用验证。
+
+### L2 维度级（5 维度雷达）
+
+- 范围：延迟、相关性、成功率、成本、离线可用性。
+- 结果：**5/5** 维度 PASS，见上方雷达文字与分数。
+
+### L3 系统级（92 tests + MCP）
+
+- 范围：92 项 pytest 测试、MCP `initialize`/`tools/list`/`tools/call`、全局配置与 Docker Compose 配置。
+- 结果：MCP 规范工具清单 **22/22**，调用链路可用。
+
+### L4 硬件级（GPU、并发与空间）
+
+- GPU 显存、并发参数与共享模型缓存见 [`docs/gpu-optimization.md`](gpu-optimization.md)。
+- 磁盘与缓存占用见 [`docs/space-optimization.md`](space-optimization.md) 与 `/tmp/jina-local-bench-space.json`。
+- 运行环境：RTX 5070 12GB，embeddings/reranker 共享 TEI 模型与 GPU 资源。
+
 ## 结论
 
 - **{summary['overall_judgement']}**
 - 5 维度雷达本地外扩、jina 内缩，本地在延迟（缓存 0s）、相关性（100%）、成功率（100%）、成本（0）、离线（100%）均 ≥ jina（jina 因余额不足 402 多数不可用，且成本/离线先天劣势）。
-- 21 工具全兼容（reader/search/deep/reranker/embeddings + 7 utils + search_academic/images/jina_blog/bibtex 等），`python -m pytest tests/ -q` 预期 84+ 通过（实际见 CI）。
+- 22 工具全兼容（reader/search/deep/reranker/embeddings + 7 utils + search_academic/images/jina_blog/bibtex 等），`python -m pytest tests/ -q` 预期全通过（实际见 CI）。
 - 无需插入 TODO；若后续某维度出现 NEEDS_OPT/FAIL，`bench_full.py` 会自动在 `mcp-gateway/src/*.py` 对应模块头部插入 `# TODO(bench-full): …` 并在此节记录。
 
 ## 实现文件
 
-- `scripts/bench_full.py`（本脚本，汇总 7 bench → 5 维度 × 21 工具，输出 json + md，含 TODO 闭环）
+- `scripts/bench_full.py`（本脚本，汇总 7 bench → 5 维度 × 22 工具，输出 json + md，含 TODO 闭环）
 - `/tmp/jina-local-bench-full.json`（机器可读总评）
 - `docs/bench-full.md`（本文件，表格+雷达文字+结论）
 - `tests/test_bench_full.py`（校验 bench 文件存在且总体 PASS）

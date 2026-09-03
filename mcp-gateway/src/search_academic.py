@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = pathlib.Path("/tmp/opencode/jina-local")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8080")
+SEARXNG_URL = os.getenv("SEARXNG_URL", "http://127.0.0.1:8081")
 DEFAULT_NUM = 5
 TIMEOUT = 8
 HEADERS = {

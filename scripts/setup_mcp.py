@@ -43,6 +43,21 @@ def _resolve_gateway_command():
     return ["python3", str(HOME_JINA_LOCAL / "mcp-gateway" / "src" / "server.py")]
 
 
+def _gateway_environment() -> dict[str, str]:
+    values: dict[str, str] = {}
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if not line or line.lstrip().startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip().strip('"').strip("'")
+    port = values.get("SEARXNG_PORT", "8081")
+    if not port.isdigit() or not (1 <= int(port) <= 65535):
+        port = "8081"
+    return {"SEARXNG_URL": values.get("SEARXNG_URL", f"http://127.0.0.1:{port}")}
+
+
 def _validate_home_path():
     if not HOME_JINA_LOCAL.exists():
         print(f"ERROR: {HOME_JINA_LOCAL} 不存在，请先创建 ~/jina-local", file=sys.stderr)
@@ -102,7 +117,7 @@ def _ensure_generic_mcp_json():
     data["mcpServers"]["jina-local"] = {
         "command": cmd[0],
         "args": cmd[1:],
-        "env": {}
+        "env": _gateway_environment()
     }
     # 若文件已存在且内容已正确则跳过写入
     existing = _load_json(GENERIC_MCP_JSON)
@@ -121,7 +136,7 @@ def _setup_opencode():
         data["mcp"] = {}
     # 幂等写入
     prev = data["mcp"].get("jina-local")
-    new_entry = {"type": "local", "command": cmd, "enabled": True, "environment": {}}
+    new_entry = {"type": "local", "command": cmd, "enabled": True, "environment": _gateway_environment()}
     if prev == new_entry:
         print(f"✓ 已存在 {OPENCODE_CONFIG} -> mcp.jina-local (幂等)")
         return
@@ -135,7 +150,7 @@ def _setup_opencode():
 def _setup_claude():
     _validate_home_path()
     cmd = _resolve_gateway_command()
-    mcp_entry = {"command": cmd[0], "args": cmd[1:], "env": {}}
+    mcp_entry = {"command": cmd[0], "args": cmd[1:], "env": _gateway_environment()}
     # 优先 ~/.config/claude/mcp.json
     for cfg_path in [CLAUDE_CONFIG_1, CLAUDE_CONFIG_2]:
         # 若 ~/.claude.json 已存在则更新，否则仅当该路径更合适时创建
@@ -179,7 +194,7 @@ def _setup_codex():
     _validate_home_path()
     cmd = _resolve_gateway_command()
     # JSON 变体
-    mcp_entry = {"command": cmd[0], "args": cmd[1:], "env": {}}
+    mcp_entry = {"command": cmd[0], "args": cmd[1:], "env": _gateway_environment()}
     data = _load_json(CODEX_JSON)
     if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
         if not data:

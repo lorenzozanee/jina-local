@@ -91,3 +91,18 @@ def test_compose_has_services_top_level():
     """顶层需包含 services: 段（非注释）"""
     text = _active_text()
     assert "services:" in text, "功能缺失: docker-compose.yml 缺少顶层 services: 定义（当前被注释）"
+
+
+def test_compose_uses_configurable_search_port_and_reader_token():
+    """Search 与 Reader 必须由 .env 驱动，避免端口冲突或 Reader 只绑定容器回环。"""
+    text = _active_text()
+    assert '${SEARXNG_PORT:-8081}:8080' in text
+    assert 'CRAWL4AI_API_TOKEN: "${CRAWL4AI_API_TOKEN:?' in text
+    assert 'SEARXNG_PORT: "8080"' in text
+    assert './searxng:/etc/searxng' in text
+    assert 'read_only: true' not in text
+    assert 'cap_drop:' not in text
+    settings = ROOT / 'searxng' / 'settings.yml'
+    assert settings.exists()
+    assert 'formats:' in settings.read_text(encoding='utf-8')
+    assert '- json' in settings.read_text(encoding='utf-8')

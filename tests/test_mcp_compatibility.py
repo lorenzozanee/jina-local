@@ -1,4 +1,5 @@
 """MCP 20工具全兼容测试 - 验证 server.py / gateway.py 暴露全部 jina 官方工具且签名兼容"""
+import asyncio
 import importlib.util
 import inspect
 import pathlib
@@ -31,6 +32,7 @@ EXPECTED_TOOLS = [
     "deduplicate_strings",
     "deduplicate_images",
     "extract_pdf",
+    "embeddings",
 ]
 
 # 每个工具的必填参数签名（jina兼容）
@@ -56,6 +58,7 @@ EXPECTED_SIGNATURES = {
     "deduplicate_strings": ["strings"],
     "deduplicate_images": ["images"],
     "extract_pdf": ["url"],
+    "embeddings": ["texts"],
 }
 
 # 备选并行参数名兼容
@@ -114,13 +117,17 @@ def _collect_exposed_names(mod):
         # 也尝试 list_tools
         try:
             if hasattr(mcp, "list_tools"):
-                tools = mcp.list_tools()  # type: ignore
-                if isinstance(tools, list):
-                    for t in tools:
-                        if hasattr(t, "name"):
-                            names.add(t.name)
-                        elif isinstance(t, dict) and "name" in t:
-                            names.add(t["name"])
+                try:
+                    tools = asyncio.run(mcp.list_tools())
+                except RuntimeError:
+                    pass  # 已在事件循环中，跳过异步调用
+                else:
+                    if isinstance(tools, list):
+                        for t in tools:
+                            if hasattr(t, "name"):
+                                names.add(t.name)
+                            elif isinstance(t, dict) and "name" in t:
+                                names.add(t["name"])
         except Exception:
             pass
     return names
@@ -234,3 +241,43 @@ def test_search_images_and_jina_blog_implemented():
     combined = acad_text + gateway_text + server_text
     assert "search_images" in combined, "未实现 search_images"
     assert "search_jina_blog" in combined, "未实现 search_jina_blog"
+
+
+def test_mcp_list_tools_canonical_set():
+    """通过 asyncio 调用 server.mcp.list_tools()，断言工具名为完整且无重复的规范集合。
+
+    回归测试：验证 MCP 重复注册/schema 缺陷已修复——
+    - 工具名应为完整且无重复的规范集合（含 embeddings，合计22个）
+    - 不含 *_tool 后缀的重复注册名
+    - search_web 只要求 query（不得有 kwargs 字段）
+    - parallel_search_web 只要求 queries
+    """
+    server_mod = _get_server()
+    tools = asyncio.run(server_mod.mcp.list_tools())
+    names = [t.name for t in tools]
+
+    # 构建规范集合：去重后应恰好为 EXPECTED_TOOLS
+    canonical = sorted(set(names))
+    expected = sorted(EXPECTED_TOOLS)
+    assert canonical == expected, (
+        f"工具名不规范：多余 {sorted(set(names) - set(expected))}，缺失 {set(expected) - set(names)}，合计 {len(names)} 个"
+    )
+
+    # 断言不含 *_tool 后缀名
+    tool_suffix_names = [n for n in names if n.endswith("_tool")]
+    assert not tool_suffix_names, f"存在 *_tool 后缀重复注册名: {sorted(tool_suffix_names)}"
+
+    # 断言 search_web 只要求 query，不得有 kwargs 字段
+    search_web_tool = next((t for t in tools if t.name == "search_web"), None)
+    assert search_web_tool is not None, "缺少 search_web 工具"
+    search_web_required = search_web_tool.inputSchema.get("required", [])
+    assert "kwargs" not in search_web_required, (
+        f"search_web 不得有 kwargs 字段，实际 required: {search_web_required}"
+    )
+    assert search_web_required == ["query"], f"search_web 必须只要求 query，实际 required: {search_web_required}"
+
+    # 断言 parallel_search_web 只要求 queries
+    psw_tool = next((t for t in tools if t.name == "parallel_search_web"), None)
+    assert psw_tool is not None, "缺少 parallel_search_web 工具"
+    psw_required = psw_tool.inputSchema.get("required", [])
+    assert psw_required == ["queries"], f"parallel_search_web 必须只要求 queries，实际 required: {psw_required}"

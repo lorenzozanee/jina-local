@@ -16,32 +16,55 @@ except ImportError as _e:  # pragma: no cover
 
 try:
     from .gateway import (
-        read_url,
-        parallel_read_url,
-        search_web,
-        sort_by_relevance,
-        parallel_search_web,
-        search_web_deep,
-        deduplicate_strings,
-        deduplicate_images,
-        classify_text,
-        expand_query,
-        extract_pdf,
-        guess_datetime_url,
-        primer,
-        search_arxiv,
-        parallel_search_arxiv,
-        search_ssrn,
-        parallel_search_ssrn,
-        search_bibtex,
-        search_images,
-        search_jina_blog,
-        capture_screenshot_url,
-        embeddings,
+        read_url as _read_url_impl,
+        parallel_read_url as _parallel_read_url_impl,
+        search_web as _search_web_impl,
+        sort_by_relevance as _sort_by_relevance_impl,
+        parallel_search_web as _parallel_search_web_impl,
+        search_web_deep as _search_web_deep_impl,
+        deduplicate_strings as _deduplicate_strings_impl,
+        deduplicate_images as _deduplicate_images_impl,
+        classify_text as _classify_text_impl,
+        expand_query as _expand_query_impl,
+        extract_pdf as _extract_pdf_impl,
+        guess_datetime_url as _guess_datetime_url_impl,
+        primer as _primer_impl,
+        search_arxiv as _search_arxiv_impl,
+        parallel_search_arxiv as _parallel_search_arxiv_impl,
+        search_ssrn as _search_ssrn_impl,
+        parallel_search_ssrn as _parallel_search_ssrn_impl,
+        search_bibtex as _search_bibtex_impl,
+        search_images as _search_images_impl,
+        search_jina_blog as _search_jina_blog_impl,
+        capture_screenshot_url as _capture_screenshot_url_impl,
+        embeddings as _embeddings_impl,
     )
 except ImportError:
     try:
-        from gateway import read_url, parallel_read_url, search_web, sort_by_relevance, parallel_search_web, search_web_deep, deduplicate_strings, deduplicate_images, classify_text, expand_query, extract_pdf, guess_datetime_url, primer, search_arxiv, parallel_search_arxiv, search_ssrn, parallel_search_ssrn, search_bibtex, search_images, search_jina_blog, capture_screenshot_url, embeddings  # type: ignore
+        from gateway import (
+            read_url as _read_url_impl,
+            parallel_read_url as _parallel_read_url_impl,
+            search_web as _search_web_impl,
+            sort_by_relevance as _sort_by_relevance_impl,
+            parallel_search_web as _parallel_search_web_impl,
+            search_web_deep as _search_web_deep_impl,
+            deduplicate_strings as _deduplicate_strings_impl,
+            deduplicate_images as _deduplicate_images_impl,
+            classify_text as _classify_text_impl,
+            expand_query as _expand_query_impl,
+            extract_pdf as _extract_pdf_impl,
+            guess_datetime_url as _guess_datetime_url_impl,
+            primer as _primer_impl,
+            search_arxiv as _search_arxiv_impl,
+            parallel_search_arxiv as _parallel_search_arxiv_impl,
+            search_ssrn as _search_ssrn_impl,
+            parallel_search_ssrn as _parallel_search_ssrn_impl,
+            search_bibtex as _search_bibtex_impl,
+            search_images as _search_images_impl,
+            search_jina_blog as _search_jina_blog_impl,
+            capture_screenshot_url as _capture_screenshot_url_impl,
+            embeddings as _embeddings_impl,
+        )  # type: ignore
     except ImportError:  # fallback for direct file execution without package context
         import importlib.util
         import pathlib as _pl
@@ -51,50 +74,63 @@ except ImportError:
         assert _spec and _spec.loader
         _gw = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(_gw)  # type: ignore
-        read_url = _gw.read_url  # type: ignore
-        parallel_read_url = getattr(_gw, "parallel_read_url", None)  # type: ignore
-        search_web = _gw.search_web  # type: ignore
-        sort_by_relevance = _gw.sort_by_relevance  # type: ignore
-        parallel_search_web = getattr(_gw, "parallel_search_web", None)  # type: ignore
-        search_web_deep = getattr(_gw, "search_web_deep", None)  # type: ignore
-        deduplicate_strings = getattr(_gw, "deduplicate_strings", None)  # type: ignore
-        deduplicate_images = getattr(_gw, "deduplicate_images", None)  # type: ignore
-        classify_text = getattr(_gw, "classify_text", None)  # type: ignore
-        expand_query = getattr(_gw, "expand_query", None)  # type: ignore
-        extract_pdf = getattr(_gw, "extract_pdf", None)  # type: ignore
-        guess_datetime_url = getattr(_gw, "guess_datetime_url", None)  # type: ignore
-        primer = getattr(_gw, "primer", None)  # type: ignore
-        search_arxiv = getattr(_gw, "search_arxiv", None)  # type: ignore
-        parallel_search_arxiv = getattr(_gw, "parallel_search_arxiv", None)  # type: ignore
-        search_ssrn = getattr(_gw, "search_ssrn", None)  # type: ignore
-        parallel_search_ssrn = getattr(_gw, "parallel_search_ssrn", None)  # type: ignore
-        search_bibtex = getattr(_gw, "search_bibtex", None)  # type: ignore
-        search_images = getattr(_gw, "search_images", None)  # type: ignore
-        search_jina_blog = getattr(_gw, "search_jina_blog", None)  # type: ignore
-        capture_screenshot_url = getattr(_gw, "capture_screenshot_url", None)  # type: ignore
-        embeddings = getattr(_gw, "embeddings", None)  # type: ignore
-        if parallel_read_url is None:
+        _read_url_impl = getattr(_gw, "read_url", None)  # type: ignore
+        _parallel_read_url_impl = getattr(_gw, "parallel_read_url", None)  # type: ignore
+        _search_web_impl = getattr(_gw, "search_web", None)  # type: ignore
+        _sort_by_relevance_impl = getattr(_gw, "sort_by_relevance", None)  # type: ignore
+        _parallel_search_web_impl = getattr(_gw, "parallel_search_web", None)  # type: ignore
+        _search_web_deep_impl = getattr(_gw, "search_web_deep", None)  # type: ignore
+        _deduplicate_strings_impl = getattr(_gw, "deduplicate_strings", None)  # type: ignore
+        _deduplicate_images_impl = getattr(_gw, "deduplicate_images", None)  # type: ignore
+        _classify_text_impl = getattr(_gw, "classify_text", None)  # type: ignore
+        _expand_query_impl = getattr(_gw, "expand_query", None)  # type: ignore
+        _extract_pdf_impl = getattr(_gw, "extract_pdf", None)  # type: ignore
+        _guess_datetime_url_impl = getattr(_gw, "guess_datetime_url", None)  # type: ignore
+        _primer_impl = getattr(_gw, "primer", None)  # type: ignore
+        _search_arxiv_impl = getattr(_gw, "search_arxiv", None)  # type: ignore
+        _parallel_search_arxiv_impl = getattr(_gw, "parallel_search_arxiv", None)  # type: ignore
+        _search_ssrn_impl = getattr(_gw, "search_ssrn", None)  # type: ignore
+        _parallel_search_ssrn_impl = getattr(_gw, "parallel_search_ssrn", None)  # type: ignore
+        _search_bibtex_impl = getattr(_gw, "search_bibtex", None)  # type: ignore
+        _search_images_impl = getattr(_gw, "search_images", None)  # type: ignore
+        _search_jina_blog_impl = getattr(_gw, "search_jina_blog", None)  # type: ignore
+        _capture_screenshot_url_impl = getattr(_gw, "capture_screenshot_url", None)  # type: ignore
+        _embeddings_impl = getattr(_gw, "embeddings", None)  # type: ignore
+        if _parallel_read_url_impl is None:
             try:
                 from reader import parallel_read_url as parallel_read_url  # type: ignore
+                _parallel_read_url_impl = parallel_read_url  # type: ignore
             except ImportError:
-                parallel_read_url = None  # type: ignore
-        if parallel_search_web is None:
+                _parallel_read_url_impl = None  # type: ignore
+        if _parallel_search_web_impl is None:
             try:
                 from search import parallel_search_web as parallel_search_web  # type: ignore
+                _parallel_search_web_impl = parallel_search_web  # type: ignore
             except ImportError:
-                parallel_search_web = None  # type: ignore
-        if search_web_deep is None:
+                _parallel_search_web_impl = None  # type: ignore
+        if _search_web_deep_impl is None:
             try:
                 from search_deep import search_web_deep as search_web_deep  # type: ignore
+                _search_web_deep_impl = search_web_deep  # type: ignore
             except ImportError:
-                search_web_deep = None  # type: ignore
+                _search_web_deep_impl = None  # type: ignore
         # fallback for academic utils
-        for _name in ["search_arxiv", "parallel_search_arxiv", "search_ssrn", "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog", "capture_screenshot_url"]:
-            if locals().get(_name) is None:
+        _academic_names = {
+            "search_arxiv": _search_arxiv_impl,
+            "parallel_search_arxiv": _parallel_search_arxiv_impl,
+            "search_ssrn": _search_ssrn_impl,
+            "parallel_search_ssrn": _parallel_search_ssrn_impl,
+            "search_bibtex": _search_bibtex_impl,
+            "search_images": _search_images_impl,
+            "search_jina_blog": _search_jina_blog_impl,
+            "capture_screenshot_url": _capture_screenshot_url_impl,
+        }
+        for _name in _academic_names:
+            if _academic_names[_name] is None:
                 try:
                     import importlib as _imp
                     _sa = _imp.import_module("search_academic")
-                    locals()[_name] = getattr(_sa, _name, None)
+                    _academic_names[_name] = getattr(_sa, _name, None)
                 except Exception:
                     try:
                         import pathlib as _p2
@@ -104,9 +140,17 @@ except ImportError:
                             assert _spec2 and _spec2.loader
                             _mod2 = importlib.util.module_from_spec(_spec2)
                             _spec2.loader.exec_module(_mod2)  # type: ignore
-                            locals()[_name] = getattr(_mod2, _name, None)
+                            _academic_names[_name] = getattr(_mod2, _name, None)
                     except Exception:
                         pass
+        _search_arxiv_impl = _academic_names["search_arxiv"]  # type: ignore
+        _parallel_search_arxiv_impl = _academic_names["parallel_search_arxiv"]  # type: ignore
+        _search_ssrn_impl = _academic_names["search_ssrn"]  # type: ignore
+        _parallel_search_ssrn_impl = _academic_names["parallel_search_ssrn"]  # type: ignore
+        _search_bibtex_impl = _academic_names["search_bibtex"]  # type: ignore
+        _search_images_impl = _academic_names["search_images"]  # type: ignore
+        _search_jina_blog_impl = _academic_names["search_jina_blog"]  # type: ignore
+        _capture_screenshot_url_impl = _academic_names["capture_screenshot_url"]  # type: ignore
 
 # 传输选项常量，暴露给 __all__ 与 --help
 SUPPORTED_TRANSPORTS = ["stdio", "sse", "http", "streamable-http"]
@@ -121,120 +165,92 @@ if FastMCP is not None:
     mcp = FastMCP("jina-local-gateway")
 
     @mcp.tool()
-    def embeddings_tool(texts: list[str]) -> list[list[float]]:
-        return embeddings(texts)
+    def primer() -> dict:
+        return _primer_impl()
 
     @mcp.tool()
-    def read_url_tool(url: str) -> str:
-        """Fetch URL and return markdown string (wrapper over gateway.read_url)."""
-        return read_url(url)
+    def read_url(url: str, question: str | None = None, chunk_size: int = 100, top_k: int = 3) -> str:
+        return _read_url_impl(url, question=question, chunk_size=chunk_size, top_k=top_k)
 
     @mcp.tool()
-    def parallel_read_url_tool(urls: list[str]) -> list[str]:
-        return parallel_read_url(urls)
+    def capture_screenshot_url(url: str) -> dict:
+        return _capture_screenshot_url_impl(url)
 
     @mcp.tool()
-    def search_web_tool(query: str, num: int = 5) -> list[dict]:
-        """Search web wrapper over gateway.search_web."""
-        return search_web(query, num=num)
+    def guess_datetime_url(url: str) -> dict:
+        return _guess_datetime_url_impl(url)
 
     @mcp.tool()
-    def parallel_search_web_tool(queries: list[str], num: int = 5) -> list[list[dict]]:
-        """Parallel search wrapper over gateway.parallel_search_web."""
-        return parallel_search_web(queries, num=num)
+    def search_web(query: str, num: int = 5) -> list[dict]:
+        return _search_web_impl(query, num=num)
 
     @mcp.tool()
-    def sort_by_relevance_tool(query: str, documents: list[str]) -> list[dict]:
-        """Rerank wrapper over gateway.sort_by_relevance."""
-        return sort_by_relevance(query, documents)
+    def search_web_deep(query: str, num: int = 5, chunk_size: int = 100) -> list[dict]:
+        return _search_web_deep_impl(query, num=num, chunk_size=chunk_size)
 
     @mcp.tool()
-    def search_web_deep_tool(query: str, num: int = 5, chunk_size: int = 100) -> list[dict]:
-        """Search deep wrapper over gateway.search_web_deep."""
-        return search_web_deep(query, num=num, chunk_size=chunk_size)
+    def search_arxiv(query: str, num: int = 5) -> list[dict]:
+        return _search_arxiv_impl(query, num=num)
 
     @mcp.tool()
-    def deduplicate_strings_tool(strings: list[str], top_k: int | None = None) -> list[str]:
-        return deduplicate_strings(strings, top_k=top_k)
+    def search_ssrn(query: str, num: int = 5) -> list[dict]:
+        return _search_ssrn_impl(query, num=num)
 
     @mcp.tool()
-    def deduplicate_images_tool(images: list[str], top_k: int | None = None) -> list[str]:
-        return deduplicate_images(images, top_k=top_k)
+    def search_images(query: str, num: int = 5) -> list[dict]:
+        return _search_images_impl(query, num=num)
 
     @mcp.tool()
-    def classify_text_tool(texts: list[str], labels: list[str]) -> list[dict]:
-        return classify_text(texts, labels)
+    def search_jina_blog(query: str, num: int = 5) -> list[dict]:
+        return _search_jina_blog_impl(query, num=num)
 
     @mcp.tool()
-    def expand_query_tool(query: str, num: int = 3) -> list[str]:
-        return expand_query(query, num=num)
+    def search_bibtex(query: str, num: int = 5) -> list[dict]:
+        return _search_bibtex_impl(query, num=num)
 
     @mcp.tool()
-    def extract_pdf_tool(url: str) -> dict:
-        return extract_pdf(url)
+    def expand_query(query: str, num: int = 3) -> list[str]:
+        return _expand_query_impl(query, num=num)
 
     @mcp.tool()
-    def guess_datetime_url_tool(url: str) -> dict:
-        return guess_datetime_url(url)
+    def parallel_read_url(urls: list[str], question: str | None = None, max_workers: int = 5) -> list[str]:
+        return _parallel_read_url_impl(urls, question=question, max_workers=max_workers)
 
     @mcp.tool()
-    def primer_tool() -> dict:
-        return primer()
+    def parallel_search_web(queries: list[str], num: int = 5) -> list[list[dict]]:
+        return _parallel_search_web_impl(queries, num=num)
 
     @mcp.tool()
-    def search_arxiv_tool(query: str, num: int = 5) -> list[dict]:
-        return search_arxiv(query, num=num)
+    def parallel_search_arxiv(queries: list[str], num: int = 5) -> list[list[dict]]:
+        return _parallel_search_arxiv_impl(queries, num=num)
 
     @mcp.tool()
-    def parallel_search_arxiv_tool(queries: list[str], num: int = 5) -> list[list[dict]]:
-        return parallel_search_arxiv(queries, num=num)
+    def parallel_search_ssrn(queries: list[str], num: int = 5) -> list[list[dict]]:
+        return _parallel_search_ssrn_impl(queries, num=num)
 
     @mcp.tool()
-    def search_ssrn_tool(query: str, num: int = 5) -> list[dict]:
-        return search_ssrn(query, num=num)
+    def sort_by_relevance(query: str, documents: list[str]) -> list[dict]:
+        return _sort_by_relevance_impl(query, documents)
 
     @mcp.tool()
-    def parallel_search_ssrn_tool(queries: list[str], num: int = 5) -> list[list[dict]]:
-        return parallel_search_ssrn(queries, num=num)
+    def classify_text(texts: list[str], labels: list[str]) -> list[dict]:
+        return _classify_text_impl(texts, labels)
 
     @mcp.tool()
-    def search_bibtex_tool(query: str, num: int = 5) -> list[dict]:
-        return search_bibtex(query, num=num)
+    def deduplicate_strings(strings: list[str], top_k: int | None = None) -> list[str]:
+        return _deduplicate_strings_impl(strings, top_k=top_k)
 
     @mcp.tool()
-    def search_images_tool(query: str, num: int = 5) -> list[dict]:
-        return search_images(query, num=num)
+    def deduplicate_images(images: list[str], top_k: int | None = None) -> list[str]:
+        return _deduplicate_images_impl(images, top_k=top_k)
 
     @mcp.tool()
-    def search_jina_blog_tool(query: str, num: int = 5) -> list[dict]:
-        return search_jina_blog(query, num=num)
+    def extract_pdf(url: str) -> dict:
+        return _extract_pdf_impl(url)
 
     @mcp.tool()
-    def capture_screenshot_url_tool(url: str) -> dict:
-        return capture_screenshot_url(url)
-
-    # 同时直接暴露原始函数名以兼容 jina 工具名（21工具）
-    mcp.tool()(read_url)
-    mcp.tool()(parallel_read_url)
-    mcp.tool()(search_web)
-    mcp.tool()(parallel_search_web)
-    mcp.tool()(sort_by_relevance)
-    mcp.tool()(search_web_deep)
-    mcp.tool()(deduplicate_strings)
-    mcp.tool()(deduplicate_images)
-    mcp.tool()(classify_text)
-    mcp.tool()(expand_query)
-    mcp.tool()(extract_pdf)
-    mcp.tool()(guess_datetime_url)
-    mcp.tool()(primer)
-    mcp.tool()(search_arxiv)
-    mcp.tool()(parallel_search_arxiv)
-    mcp.tool()(search_ssrn)
-    mcp.tool()(parallel_search_ssrn)
-    mcp.tool()(search_bibtex)
-    mcp.tool()(search_images)
-    mcp.tool()(search_jina_blog)
-    mcp.tool()(capture_screenshot_url)
+    def embeddings(texts: list[str]) -> list[list[float]]:
+        return _embeddings_impl(texts)
 
     def _parse_args(argv=None):
         parser = argparse.ArgumentParser(description="jina-local MCP Gateway - FastMCP stdio/sse/http")
@@ -271,7 +287,7 @@ if FastMCP is not None:
             return
         except Exception as e:
             msg = str(e).lower()
-            # 若为未知 transport 或其他可重试错误，尝试 uvicorn 包装
+            # 若为 unknown transport 或其他可重试错误，尝试 uvicorn 包装
             print(f"FastMCP native {t} failed: {e}, trying uvicorn wrapper...", file=sys.stderr)
             try:
                 import uvicorn  # type: ignore
@@ -295,11 +311,14 @@ if FastMCP is not None:
         main(transport=_args.transport, host=_args.host, port=_args.port)
 
     __all__ = [
-        "read_url", "parallel_read_url", "search_web", "sort_by_relevance", "search_web_deep",
-        "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf",
-        "guess_datetime_url", "primer", "search_arxiv", "parallel_search_arxiv", "search_ssrn",
-        "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog",
-        "capture_screenshot_url", "embeddings_tool", "mcp", "main", "_parse_args",
+        "primer", "read_url", "capture_screenshot_url", "guess_datetime_url",
+        "search_web", "search_web_deep",
+        "search_arxiv", "search_ssrn", "search_images", "search_jina_blog",
+        "search_bibtex", "expand_query",
+        "parallel_read_url", "parallel_search_web", "parallel_search_arxiv", "parallel_search_ssrn",
+        "sort_by_relevance", "classify_text", "deduplicate_strings", "deduplicate_images",
+        "extract_pdf", "embeddings",
+        "mcp", "main", "_parse_args",
         "SUPPORTED_TRANSPORTS", "TRANSPORT_CHOICES", "AVAILABLE_TRANSPORTS", "TRANSPORT_ALIASES",
         "DEFAULT_TRANSPORT", "DEFAULT_HOST", "DEFAULT_PORT",
     ]
@@ -328,13 +347,15 @@ else:  # fallback when mcp not installed
         _args = _parse_args()
         main(transport=_args.transport, host=_args.host, port=_args.port)
 
-    # 保留原始函数可直接调用
     __all__ = [
-        "read_url", "parallel_read_url", "search_web", "sort_by_relevance", "search_web_deep",
-        "deduplicate_strings", "deduplicate_images", "classify_text", "expand_query", "extract_pdf",
-        "guess_datetime_url", "primer", "search_arxiv", "parallel_search_arxiv", "search_ssrn",
-        "parallel_search_ssrn", "search_bibtex", "search_images", "search_jina_blog",
-        "capture_screenshot_url", "mcp", "main", "_parse_args",
+        "primer", "read_url", "capture_screenshot_url", "guess_datetime_url",
+        "search_web", "search_web_deep",
+        "search_arxiv", "search_ssrn", "search_images", "search_jina_blog",
+        "search_bibtex", "expand_query",
+        "parallel_read_url", "parallel_search_web", "parallel_search_arxiv", "parallel_search_ssrn",
+        "sort_by_relevance", "classify_text", "deduplicate_strings", "deduplicate_images",
+        "extract_pdf", "embeddings",
+        "mcp", "main", "_parse_args",
         "SUPPORTED_TRANSPORTS", "TRANSPORT_CHOICES", "AVAILABLE_TRANSPORTS", "TRANSPORT_ALIASES",
         "DEFAULT_TRANSPORT", "DEFAULT_HOST", "DEFAULT_PORT",
     ]

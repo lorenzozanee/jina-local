@@ -78,7 +78,7 @@ flowchart TB
     Gateway --> Academic["Academic<br/>search_academic.py<br/>arxiv/ssrn/bibtex/images"]
     Embeddings & Reranker --> HF["hf-cache:/data<br/>共享单卷 ~2G"]
     Gateway --> Qdrant["Qdrant :6333"]
-    Search -.-> SearXNG["SearXNG :8080 CPU"]
+    Search -.-> SearXNG["SearXNG :8081 CPU"]
     Reader -.-> Crawl4AI["Crawl4AI :11235 CPU"]
 ```
 

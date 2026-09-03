@@ -2,7 +2,7 @@
 
 - 校验 /tmp/jina-local-bench-full.json 与 docs/bench-full.md 存在
 - 校验总体判定 PASS 且标注“可替代且性能≥jina”
-- 校验 5 维度全部 PASS、21 工具全兼容
+- 校验 5 维度全部 PASS、22 工具全兼容
 - 校验 7 份输入 bench 均存在且为 PASS
 """
 import json

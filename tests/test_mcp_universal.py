@@ -42,6 +42,7 @@ def test_mcp_json_exists_and_valid():
     # env 可为 {} 允许
     assert "env" in entry
     assert isinstance(entry["env"], dict)
+    assert entry["env"].get("SEARXNG_URL") == "http://127.0.0.1:8081"
 
 
 def test_server_supports_transports():
@@ -140,10 +141,11 @@ def test_opencode_config_format():
     cmd_str = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
     assert "/home/cc/jina-local/mcp-gateway/src/server.py" in cmd_str, f"command 未指向 server.py: {cmd}"
     assert "worktree" not in cmd_str.lower()
+    assert entry.get("environment", {}).get("SEARXNG_URL") == "http://127.0.0.1:8081"
 
 
 def test_server_tools_still_exposed():
-    """21 工具仍通过 test_mcp_compatibility"""
+    """22 工具仍通过 test_mcp_compatibility"""
     # 直接复用兼容性测试逻辑
     import importlib.util
     GATEWAY = ROOT / "mcp-gateway" / "src" / "gateway.py"

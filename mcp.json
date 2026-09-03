@@ -5,7 +5,9 @@
       "args": [
         "/home/cc/jina-local/mcp-gateway/src/server.py"
       ],
-      "env": {}
+      "env": {
+        "SEARXNG_URL": "http://127.0.0.1:8081"
+      }
     }
   }
 }

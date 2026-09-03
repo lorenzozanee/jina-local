@@ -1,7 +1,7 @@
 """test_bench_levels.py: 多层次评测四层验证（L1-L4）
 
 校验 docs/bench-full.md 已显式分为四层：
-- L1 工具级（21 工具逐项）
+- L1 工具级（22 工具逐项）
 - L2 维度级（5 维度雷达）
 - L3 系统级（92 测试 + MCP 全兼容）
 - L4 硬件级（GPU 显存/并发 + 空间占用）
@@ -15,8 +15,8 @@ DOC = ROOT / "docs" / "bench-full.md"
 GPU_DOC = ROOT / "docs" / "gpu-optimization.md"
 SPACE_DOC = ROOT / "docs" / "space-optimization.md"
 
-# 21 工具名单（与 bench-full.md 一致）
-ALL_21 = [
+# 22 工具名单（与 bench-full.md 一致）
+ALL_22 = [
     "primer",
     "read_url",
     "capture_screenshot_url",
@@ -38,6 +38,7 @@ ALL_21 = [
     "deduplicate_strings",
     "deduplicate_images",
     "extract_pdf",
+    "embeddings",
 ]
 
 
@@ -47,18 +48,17 @@ def _text():
 
 
 def test_l1_tool_level_present():
-    """L1 工具级：含 21 工具表与 21/21、L1 标记"""
+    """L1 工具级：含 22 工具表与 22/22、L1 标记"""
     t = _text()
     assert "L1" in t and "工具级" in t, "bench-full.md 缺 L1 工具级标题"
-    assert "21" in t and "工具" in t, "bench-full.md 缺 21 工具说明"
-    assert "21/21" in t, "bench-full.md 缺 21/21 通过标记"
-    # 21 工具表存在：表头与至少前5个工具名
-    assert "21 工具" in t or "21工具" in t or "工具总体对比" in t
+    assert "22" in t and "工具" in t, "bench-full.md 缺 22 工具说明"
+    assert "22/22" in t, "bench-full.md 缺 22/22 通过标记"
+    # 22 工具表存在：表头与至少前5个工具名
+    assert "22 工具" in t or "22工具" in t or "工具总体对比" in t
     for name in ["primer", "read_url", "search_web", "sort_by_relevance", "extract_pdf"]:
-        assert name in t, f"bench-full.md 21 工具表缺 {name}"
-    # 全 21 需都在文中（容忍个别别名，但至少 18 个命中）
-    hit = sum(1 for n in ALL_21 if n in t)
-    assert hit >= 18, f"bench-full.md 21 工具命中仅 {hit}/21"
+        assert name in t, f"bench-full.md 22 工具表缺 {name}"
+    hit = sum(1 for n in ALL_22 if n in t)
+    assert hit == len(ALL_22), f"bench-full.md 22 工具命中仅 {hit}/{len(ALL_22)}"
 
 
 def test_l2_dimension_level_present():

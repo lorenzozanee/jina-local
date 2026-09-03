@@ -12,7 +12,7 @@
 - [快速开始](#快速开始3-步)
 - [多 Agent 接入（Claude Code/OpenClaw/Hermes/Codex/Opencode 通用）](#多-agent-接入claude-codeopenclawhermescodexopencode-通用)
 - [架构](#架构)
-- [替代对照表（21 工具）](#替代对照表21-工具)
+- [替代对照表（22 工具）](#替代对照表22-工具)
 - [性能对比（5 维度雷达 + 92 测试）](#性能对比5-维度雷达--92-测试)
 - [显存与空间预算](#显存与空间预算)
 - [目录结构](#目录结构)
@@ -30,7 +30,7 @@
 | **强依赖云端网络** | 需联网 + Key，离线/弱网/内网环境完全不可用，离线维度 1.0/10 | 离线可用 10.0/10，`/tmp/opencode/jina-local` 持久缓存 + `hf-cache` 本地模型，断网可跑 |
 | **按量计费成本高** | Embeddings ~$0.02/1M tokens、Reader ~$0.30/1M、Search/Rerank $0.01–0.03/请求，量大即烧余额 | 成本 10.0/10，本地 0 成本，RTX 5070 一次性硬件投入 |
 | **延迟与限流不可控** | 冷启动 0.9–1.6s 且受远端限流/排队影响，`httpbin.org/html` 实测匿名被封 403 | 冷启动 0.7–1.5s 相当，**缓存命中 0s** 远优，`max-concurrent-requests 64` + `shm_size 1g` 支撑 >100 QPS |
-| **覆盖不全** | Utility 类 7 工具（deduplicate/classify/expand/extract_pdf 等）无对应 jina 端点或同样 402 | 21 工具全覆盖（jina 20 + 并行/离线扩展），5 维度全部 PASS |
+| **覆盖不全** | Utility 类 7 工具（deduplicate/classify/expand/extract_pdf 等）无对应 jina 端点或同样 402 | 22 工具全覆盖（含 embeddings 与并行/离线扩展），5 维度全部 PASS |
 
 > 一句话：把 `jina.ai` 的 20+ 云端能力搬到宿主机 GPU 上，OpenCode 侧仅切换 MCP endpoint 即可无感迁移。
 
@@ -322,7 +322,7 @@ flowchart TB
     Reranker --> HF
     Qdrant --> QVol["qdrant-storage:/qdrant/storage"]
 
-    Search -.->|可选| SearXNG["SearXNG<br/>searxng/searxng:latest<br/>:8080 CPU"]
+    Search -.->|可选| SearXNG["SearXNG<br/>searxng/searxng:latest<br/>:8081 CPU"]
     Reader -.->|可选| Crawl4AI["Crawl4AI<br/>unclecode/crawl4ai:latest<br/>:11235 CPU"]
 
     classDef gpu fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
@@ -335,7 +335,7 @@ flowchart TB
 
 **数据流**：
 
-1. Agent 发起 MCP tool call（`read_url` / `search_web` / `sort_by_relevance` 等 21 工具）。
+1. Agent 发起 MCP tool call（`read_url` / `search_web` / `sort_by_relevance` 等 22 个规范工具）。
 2. `server.py` (FastMCP) 暴露兼容签名，委托 `gateway.py` 统一路由。
 3. Gateway 按工具类型分发：Reader/Search/Utils/Academic 走 CPU + 缓存 + 外部聚合；Embeddings/Reranker 走 GPU TEI（`float16` + `max-batch-tokens 16384` + `max-concurrent-requests 64`），或本地 `sentence-transformers` 回退；Search Deep 编排 Search → 并行 Reader → Reranker 精排。
 4. 共享 `hf-cache` 单卷、`qdrant-storage` 持久化、`/tmp/opencode/jina-local` 缓存（sha256 键，超 7 天/10G 自动清理）。
@@ -344,9 +344,9 @@ flowchart TB
 
 ---
 
-## 替代对照表（21 工具）
+## 替代对照表（22 工具）
 
-> jina 官方 20 工具 + 并行/离线扩展 = 本地 21 工具，接口签名兼容，`opencode` 仅切换 endpoint。
+> 当前 MCP 暴露 22 个规范工具，接口签名兼容，`opencode` 仅切换 endpoint。
 
 | # | jina.ai 原能力 (Original) | jina MCP Tool (原 Tool 名) | 本地实现 (Local) | 本地模块 | 核心技术 |
 |---|---|---|---|---|---|
@@ -372,7 +372,7 @@ flowchart TB
 | 20 | Deduplicate Images — 图像去重 | `jina_deduplicate_images` | `deduplicate_images(images, top_k?, threshold?)` | `utils.py` | 同上（URL/特征去重） |
 | 21 | Extract PDF — PDF 抽取 | `jina_extract_pdf` | `extract_pdf(url)` | `utils.py` | 本地 PDF 解析 + 清洗 |
 
-> 兼容别名：`gateway.py` 另暴露 `deduplicate`/`classify`/`jina_*` / `search_deep` 等别名（见 `gateway.py:426-444`），`server.py` 同时注册 `*_tool` 与原名双入口，共 21+ 兼容。
+> 兼容别名：`gateway.py` 另暴露 `deduplicate`/`classify`/`jina_*` / `search_deep` 等内部别名（见 `gateway.py`），`server.py` 只注册规范工具名，避免重复发现和 schema 漂移。
 
 ---
 
@@ -382,11 +382,11 @@ flowchart TB
 
 ### 总体判定
 
-**PASS: 可替代且性能 ≥ jina — 21 工具全兼容、5 维度本地 ≥ jina、成本 0、离线可用**
+**PASS: 可替代且性能 ≥ jina — 22 工具全兼容、5 维度本地 ≥ jina、成本 0、离线可用**
 
 | 指标 | 本地 | jina.ai | 结论 |
 |---|---|---|---|
-| 工具通过 | **21/21** | — | 全兼容 |
+| 工具通过 | **22/22** | — | 全兼容 |
 | 维度通过 | **5/5** | — | 全部 PASS |
 | 平均分 | **9.74/10** | 3.6/10 | 本地外扩 |
 | 汇总成功率 | **134/134 (100%)** | 20/127 (16%) | jina 多数 402 |
@@ -408,7 +408,7 @@ flowchart TB
   面积比：本地约为 jina 的 2.7 倍
 ```
 
-### 21 工具明细（摘自 bench-full）
+### 22 工具明细（摘自 bench-full）
 
 | 工具 | 归属 bench | 5 维度 |
 |---|---|---|
@@ -443,7 +443,7 @@ python -m pytest tests/ -q
 
 | 测试文件 | 覆盖 |
 |---|---|
-| `test_mcp_compatibility.py` | 21 工具签名/暴露校验 |
+| `test_mcp_compatibility.py` | 22 工具签名/暴露校验 |
 | `test_mcp_global.py` | 全局部署与 MCP 端点 |
 | `test_reader_search.py` + `test_reader_extended.py` | Reader 契约 + 8 扩展（含 question/并发/缓存） |
 | `test_search_extended.py` + `test_search_deep.py` | Search 契约 + Deep 编排 |
@@ -514,7 +514,7 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
 ├── mcp-gateway/
 │   ├── pyproject.toml                 # 依赖：mcp>=1.0, httpx, trafilatura, readability-lxml, bs4, sentence-transformers 等
 │   └── src/
-│       ├── server.py                  # FastMCP stdio 入口，暴露 21 工具双入口（*_tool + 原名）
+│       ├── server.py                  # FastMCP stdio 入口，暴露 22 个规范工具
 │       ├── gateway.py                 # 统一网关：委托各模块，兼容 jina 签名与别名（jina_*/deduplicate/classify/search_deep）
 │       ├── reader.py                  # 生产级 Reader：双抽取+question+并发+sha256缓存
 │       ├── search.py                  # Search 聚合：SearXNG→DuckDuckGo/Bing/Brave→stub，去重/缓存在
@@ -524,7 +524,7 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
 │       ├── utils.py                   # Utils：deduplicate_*/classify/expand/extract_pdf/guess_datetime/primer
 │       └── search_academic.py         # Academic：arxiv/ssrn/bibtex/images/jina_blog/capture_screenshot
 ├── tests/                             # 92 tests，TDD 契约 + 扩展
-│   ├── test_mcp_compatibility.py      # 21 工具暴露与签名
+│   ├── test_mcp_compatibility.py      # 22 工具暴露与签名
 │   ├── test_mcp_global.py             # 全局部署校验
 │   ├── test_gateway_contract.py       # Gateway 委托
 │   ├── test_reader_search.py / test_reader_extended.py
@@ -547,7 +547,7 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
 │   ├── setup_mcp.py                   # 通用写入：opencode/claude/codex/openclaw/hermes mcp 配置 + mcp.json
 │   └── setup_global_mcp.py            # 兼容旧入口（仅 opencode）
 └── docs/
-    ├── bench-full.md                  # 5 维度×21 工具总评 + 雷达
+    ├── bench-full.md                  # 5 维度×22 工具总评 + 雷达
     ├── bench-reader.md                # Reader 5 URL 真机对标
     ├── gpu-optimization.md            # 12GB 显存预算 + 并发 + 懒加载
     ├── space-optimization.md          # du 实测 + 4 类大小汇总
@@ -566,7 +566,7 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
 # 单测 — 92 passed 预期
 python -m pytest tests/ -q
 python -m pytest tests/test_reader_extended.py tests/test_reranker_extended.py -v
-python -m pytest tests/test_mcp_compatibility.py -v  # 21 工具签名
+python -m pytest tests/test_mcp_compatibility.py -v  # 22 工具签名
 
 # 懒加载模式（减少常驻 50%）
 JINA_LOCAL_LAZY_LOAD=1 python -m pytest tests/ -q
@@ -596,9 +596,9 @@ python scripts/bench_search_deep.py   # → /tmp/jina-local-bench-search-deep.js
 python scripts/bench_reranker.py      # → /tmp/jina-local-bench-reranker.json
 python scripts/bench_embeddings.py    # → /tmp/jina-local-bench-embeddings.json
 python scripts/bench_utils.py         # → /tmp/jina-local-bench-utils.json  (7 工具)
-python scripts/bench_mcp_global.py    # → /tmp/jina-local-bench-mcp-global.json (21 工具全局)
+python scripts/bench_mcp_global.py    # → /tmp/jina-local-bench-mcp-global.json (22 工具全局)
 
-# 汇总总评（5 维度×21 工具，含雷达与 TODO 闭环）
+# 汇总总评（5 维度×22 工具，含雷达与 TODO 闭环）
 python scripts/bench_full.py
 cat /tmp/jina-local-bench-full.json | python -m json.tool
 cat docs/bench-full.md
@@ -641,8 +641,8 @@ A: 不会。`/tmp/opencode/jina-local` 按 `scripts/clean_cache.py` 策略清理
 **Q: 如何只启动部分服务？**  
 A: `docker compose up -d` 默认仅 embeddings/reranker/qdrant；`--profile full` 全量，`--profile reader` 仅 reader，`--profile search` 仅 search。见 [docs/images.md#按需启动示例](docs/images.md#按需启动示例)。
 
-**Q: 如何验证 21 工具全兼容？**  
-A: `python -m pytest tests/test_mcp_compatibility.py tests/test_mcp_global.py -v` 与 `python scripts/bench_mcp_global.py`，两者均校验 21 工具暴露与 5 维度。
+**Q: 如何验证 22 工具全兼容？**
+A: `python -m pytest tests/test_mcp_compatibility.py tests/test_mcp_global.py -v` 与 `python scripts/bench_mcp_global.py`，两者均校验 22 工具暴露与 5 维度。
 
 **Q: 显存 OOM 怎么办？**  
 A: 已做三层防护：`float16` 量化、`_batch_by_tokens(16384)` 切片、`JINA_LOCAL_LAZY_LOAD=1` + `JINA_LOCAL_IDLE_TIMEOUT=1800` 闲置释放；reader 仅 CPU。仍 OOM 可 `JINA_LOCAL_MAX_BATCH_TOKENS=8192` 或 `JINA_LOCAL_USE_GPU=0`。
@@ -662,4 +662,3 @@ MIT — 本项目采用 MIT 许可证。若仓库未附 `LICENSE` 文件，按 M
 ---
 
 > 关联规范：全局路径 `~/jina-local` 禁止放入 worktree；MCP 调用统一走 `mcp-gateway` 保持与 `jina.ai` Tool 兼容；按「最小可用 → 逐层加能力」演进，不做过渡性兼容层。评测与文档见 `docs/`，空间与 GPU 策略见 `docs/space-optimization.md` 与 `docs/gpu-optimization.md`。
-

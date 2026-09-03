@@ -17,6 +17,7 @@ EXPECTED_TOOLS = [
     "search_jina_blog", "search_bibtex", "expand_query", "parallel_read_url",
     "parallel_search_web", "parallel_search_arxiv", "parallel_search_ssrn",
     "sort_by_relevance", "classify_text", "deduplicate_strings", "deduplicate_images", "extract_pdf",
+    "embeddings",
 ]
 
 def _check_global_path():

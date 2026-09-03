@@ -70,6 +70,8 @@ services:
     volumes:
       - /tmp/opencode:/tmp/opencode
     env_file: .env
+    environment:
+      CRAWL4AI_API_TOKEN: "${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env}"
     restart: 'no'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
@@ -86,22 +88,14 @@ services:
     pull_policy: missing
     profiles: ["full", "search"]
     ports:
-      - "8080:8080"
+      - "${SEARXNG_PORT:-8081}:8080"
     volumes:
       - ./searxng:/etc/searxng
       - /tmp/opencode:/tmp/opencode
     env_file: .env
+    environment:
+      SEARXNG_PORT: "8080"
     restart: 'no'
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
-    read_only: true
-    tmpfs:
-      - /tmp
-
   qdrant:
     image: qdrant/qdrant:latest
     # pin digest 示例: qdrant/qdrant:v1.13.2@sha256:PLACEHOLDER_QDRANT_DIGEST

@@ -28,8 +28,8 @@ def test_utils_embeddings_use_gateway_facade(monkeypatch):
 
 def test_server_exposes_embedding_tool():
     server = importlib.import_module("server")
-    assert hasattr(server, "embeddings_tool")
-    assert callable(server.embeddings_tool)
+    assert hasattr(server, "embeddings")
+    assert callable(server.embeddings)
 
 
 def test_fallback_exports_do_not_reference_missing_embedding_tool():
@@ -37,3 +37,4 @@ def test_fallback_exports_do_not_reference_missing_embedding_tool():
     source = server_path.read_text()
     fallback = source.split("else:  # fallback when mcp not installed", 1)[1]
     assert '"embeddings_tool"' not in fallback
+    assert '"embeddings"' in fallback

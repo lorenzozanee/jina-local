@@ -176,3 +176,25 @@ def test_search_result_length():
     if cache_file.exists():
         data = json.loads(cache_file.read_text(encoding="utf-8"))
         assert isinstance(data, list) and len(data) >= 3
+
+
+def test_searxng_json_request_supplies_client_ip_headers(monkeypatch):
+    """SearXNG JSON 请求必须携带本地客户端 IP，避免 limiter 返回 403。"""
+    mod, _ = _load()
+    calls = []
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"results": [{"title": "result", "url": "https://example.com", "content": "ok"}]}
+
+    def fake_get(*args, **kwargs):
+        calls.append(kwargs)
+        return Response()
+
+    monkeypatch.setattr(mod.requests, "get", fake_get)
+    mod._fetch_searxng("test", 1)
+    assert calls
+    assert calls[0]["headers"]["X-Real-IP"] == "127.0.0.1"
+    assert calls[0]["headers"]["X-Forwarded-For"] == "127.0.0.1"
