@@ -74,6 +74,15 @@ def test_compose_defines_search_service():
     assert "search:" in text, "功能缺失: docker-compose.yml 未定义 search 服务"
 
 
+def test_compose_defines_native_search_services():
+    """search profile 必须编排 Go fetcher 和 Rust ranking core。"""
+    text = _active_text()
+    assert "search-fetcher:" in text
+    assert "search-core:" in text
+    assert '"127.0.0.1:8082:8082"' in text
+    assert '"127.0.0.1:8083:8083"' in text
+
+
 def test_compose_services_use_gpu():
     """服务必须配置 GPU（deploy.resources.reservations.devices driver nvidia 或 runtime: nvidia / gpus）"""
     text = _active_text()

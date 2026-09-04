@@ -19,6 +19,8 @@ CACHE_DIR = pathlib.Path("/tmp/opencode/jina-local")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 SEARXNG_URL = os.getenv("SEARXNG_URL", "http://127.0.0.1:8081")
+SEARCH_FETCHER_URL = os.getenv("JINA_LOCAL_SEARCH_FETCHER_URL", "http://127.0.0.1:8082")
+SEARCH_CORE_URL = os.getenv("JINA_LOCAL_SEARCH_CORE_URL", "http://127.0.0.1:8083")
 SEARXNG_TIMEOUT = 5
 DEFAULT_NUM = 5
 SEARCH_TIMEOUT = 5
@@ -445,16 +447,23 @@ def _matches_site(result: dict, host: str | None) -> bool:
 
 
 def _fetch_candidates(query: str, num: int) -> list[dict]:
-    collected: list[dict] = []
-    searx_results = _fetch_searxng(query, num * 2)
-    if searx_results:
-        collected.extend(searx_results)
-    for fetcher in (_search_duckduckgo, _search_bing, _search_brave):
-        try:
-            collected.extend(fetcher(query, num * 2))
-        except Exception as exc:
-            logger.debug("fallback fetcher %s failed: %s", fetcher.__name__, exc)
-    return [item for item in _dedup_results(collected) if _is_provenanced_result(item)]
+    try:
+        fetched = requests.post(
+            f"{SEARCH_FETCHER_URL}/v1/fetch", json={"query": query, "limit": num * 2}, timeout=SEARCH_TIMEOUT
+        )
+        if fetched.status_code == 503:
+            raise SearchUnavailableError("NO_RETRIEVAL_BACKEND: fetcher unavailable")
+        fetched.raise_for_status()
+        candidates = fetched.json().get("candidates", [])
+        ranked = requests.post(
+            f"{SEARCH_CORE_URL}/v1/rank", json={"query": query, "limit": num, "candidates": candidates}, timeout=SEARCH_TIMEOUT
+        )
+        ranked.raise_for_status()
+        return [item for item in ranked.json().get("results", []) if _is_provenanced_result(item)]
+    except SearchUnavailableError:
+        raise
+    except requests.RequestException as exc:
+        raise SearchUnavailableError(f"NO_RETRIEVAL_BACKEND: native search services unavailable ({exc})") from exc
 
 
 def search_web(query: str, num: int = DEFAULT_NUM) -> list[dict]:

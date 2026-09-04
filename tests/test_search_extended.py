@@ -228,6 +228,37 @@ def test_search_enforces_site_operator(monkeypatch, tmp_path):
     ]
 
 
+def test_search_calls_fetcher_then_core(monkeypatch, tmp_path):
+    """搜索 miss 必须按 Go fetcher -> Rust core 的固定顺序编排。"""
+    mod = _load_isolated(monkeypatch, tmp_path)
+    calls = []
+
+    class Response:
+        def __init__(self, payload):
+            self.status_code = 200
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs["json"]))
+        if url.endswith("/v1/fetch"):
+            return Response({"candidates": [_candidate("OpenCode docs", 1, "opencode.ai")]})
+        return Response({"results": [_candidate("OpenCode docs", 1, "opencode.ai")]})
+
+    monkeypatch.setattr(mod.requests, "post", fake_post)
+    results = mod.search_web("OpenCode docs", num=3)
+    assert [url for url, _ in calls] == [
+        mod.SEARCH_FETCHER_URL + "/v1/fetch",
+        mod.SEARCH_CORE_URL + "/v1/rank",
+    ]
+    assert results[0]["source"] == "searxng"
+
+
 def test_searxng_json_request_supplies_client_ip_headers(monkeypatch):
     """SearXNG JSON 请求必须携带本地客户端 IP，避免 limiter 返回 403。"""
     mod, _ = _load()
