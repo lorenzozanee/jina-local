@@ -7,7 +7,6 @@ import pathlib
 import subprocess
 import sys
 import time
-import uuid
 
 import requests
 
@@ -49,11 +48,14 @@ def _stopped(root: pathlib.Path) -> bool:
     return not result.stdout.strip()
 
 
+def stop_services(root: pathlib.Path) -> None:
+    subprocess.run(compose_command(root, "stop"), cwd=root, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=pathlib.Path, default=pathlib.Path(__file__).resolve().parents[1])
     parser.add_argument("--idle-seconds", type=float, default=3.0)
-    parser.add_argument("--start-timeout-seconds", type=float, default=60.0)
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
     if args.idle_seconds <= 0:
@@ -64,12 +66,11 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(root / "mcp-gateway" / "src"))
     import search
 
-    query = f"OpenAI Codex documentation lifecycle {uuid.uuid4().hex}"
+    query = "OpenCode docs"
     search._cache_path(query).unlink(missing_ok=True)
     try:
         _run(compose_command(root, "build"), root)
-        _run(compose_command(root, "up"), root)
-        _wait_ready(time.monotonic() + args.start_timeout_seconds)
+        stop_services(root)
         results = search.search_web(query, num=3)
         if not results or not all(search._is_provenanced_result(item) for item in results):
             raise RuntimeError("search returned no provenanced results")
@@ -81,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(0.2)
         raise RuntimeError("native search services did not stop after idle timeout")
     finally:
-        _run(compose_command(root, "stop"), root)
+        stop_services(root)
 
 
 if __name__ == "__main__":

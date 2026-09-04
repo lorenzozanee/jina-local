@@ -20,6 +20,10 @@ def _load():
 
 def test_lease_starts_native_services_once_and_records_activity(tmp_path):
     module = _load()
+    (tmp_path / "search-fetcher").mkdir()
+    (tmp_path / "search-core").mkdir()
+    (tmp_path / "search-fetcher" / "Dockerfile").write_text("FROM golang:1.27-bookworm\n")
+    (tmp_path / "search-core" / "Dockerfile").write_text("FROM rust:1.85-bookworm\n")
     commands = []
     spawned = []
 
@@ -43,10 +47,21 @@ def test_lease_starts_native_services_once_and_records_activity(tmp_path):
     with lifecycle.lease():
         pass
 
-    assert len(commands) == 1
-    assert commands[0][0][-5:] == ["up", "-d", "search", "search-fetcher", "search-core"]
+    compose_up = [command for command, _ in commands if command[:2] == ["docker", "compose"] and "up" in command]
+    assert len(compose_up) == 1
+    assert compose_up[0][-5:] == ["up", "-d", "search", "search-fetcher", "search-core"]
     assert len(spawned) == 1
     assert lifecycle.read_state()["last_activity"] == 100.0
+
+
+def test_readiness_uses_fetcher_upstream_probe(monkeypatch, tmp_path):
+    module = _load()
+    probes = []
+    lifecycle = module.SearchLifecycle(root=tmp_path, state_dir=tmp_path, probe=lambda url: probes.append(url) or True)
+
+    assert lifecycle._ready() is True
+    assert probes[0].endswith("/readyz")
+    assert probes[1].endswith("/healthz")
 
 
 def test_watchdog_stops_only_after_idle_interval(tmp_path):
@@ -56,6 +71,63 @@ def test_watchdog_stops_only_after_idle_interval(tmp_path):
     assert lifecycle.should_stop() is False
     lifecycle.write_state({"last_activity": 100.0})
     assert lifecycle.should_stop() is True
+    assert lifecycle.compose_command("stop")[-6:] == ["stop", "--timeout", "1", "search", "search-fetcher", "search-core"]
+
+
+def test_lease_pulls_missing_dockerfile_base_images_before_start(tmp_path):
+    module = _load()
+    (tmp_path / "search-fetcher").mkdir()
+    (tmp_path / "search-core").mkdir()
+    (tmp_path / "search-fetcher" / "Dockerfile").write_text("FROM golang:1.27-bookworm AS build\nFROM gcr.io/distroless/static-debian12\n")
+    (tmp_path / "search-core" / "Dockerfile").write_text("FROM rust:1.85-bookworm AS build\nFROM debian:bookworm-slim\n")
+    commands = []
+
+    class Result:
+        def __init__(self, returncode=0):
+            self.returncode = returncode
+            self.stdout = ""
+            self.stderr = ""
+
+    def runner(command, **kwargs):
+        commands.append(command)
+        return Result(1 if command[:3] == ["docker", "image", "inspect"] else 0)
+
+    lifecycle = module.SearchLifecycle(
+        root=tmp_path,
+        state_dir=tmp_path,
+        runner=runner,
+        probe=lambda url: True,
+        spawner=lambda *args, **kwargs: None,
+    )
+
+    with lifecycle.lease():
+        pass
+
+    assert [command[2] for command in commands if command[:2] == ["docker", "pull"]] == [
+        "golang:1.27-bookworm",
+        "gcr.io/distroless/static-debian12",
+        "rust:1.85-bookworm",
+        "debian:bookworm-slim",
+    ]
+    assert commands[-1][-5:] == ["up", "-d", "search", "search-fetcher", "search-core"]
+
+
+def test_missing_docker_cli_is_a_lifecycle_error(tmp_path):
+    module = _load()
+    (tmp_path / "search-fetcher").mkdir()
+    (tmp_path / "search-core").mkdir()
+    (tmp_path / "search-fetcher" / "Dockerfile").write_text("FROM golang:1.27-bookworm\n")
+    (tmp_path / "search-core" / "Dockerfile").write_text("FROM rust:1.85-bookworm\n")
+    lifecycle = module.SearchLifecycle(
+        root=tmp_path,
+        state_dir=tmp_path,
+        runner=lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("docker")),
+        probe=lambda url: False,
+    )
+
+    with pytest.raises(module.SearchLifecycleError, match="docker command unavailable"):
+        with lifecycle.lease():
+            pass
 
 
 def test_search_cache_hit_does_not_acquire_lifecycle(monkeypatch, tmp_path):

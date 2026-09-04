@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import threading
@@ -17,6 +18,7 @@ import requests
 DEFAULT_IDLE_SECONDS = 600.0
 DEFAULT_START_TIMEOUT_SECONDS = 30.0
 DEFAULT_POLL_SECONDS = 0.2
+BASE_IMAGE_PULL_ATTEMPTS = 3
 
 
 class SearchLifecycleError(RuntimeError):
@@ -71,19 +73,60 @@ class SearchLifecycle:
         command = ["docker", "compose", "-f", str(self.root / "docker-compose.yml"), "--profile", "search", action]
         if action == "up":
             return [*command, "-d", "search", "search-fetcher", "search-core"]
+        if action == "stop":
+            return [*command, "--timeout", "1", "search", "search-fetcher", "search-core"]
         return [*command, "search", "search-fetcher", "search-core"]
 
     def _run_compose(self, action: str) -> None:
-        result = self.runner(
-            self.compose_command(action),
-            cwd=self.root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = self.runner(
+                self.compose_command(action),
+                cwd=self.root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as exc:
+            raise SearchLifecycleError("docker command unavailable") from exc
         if result.returncode:
             detail = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "docker compose failed").strip()
             raise SearchLifecycleError(f"native search {action} failed: {detail[:500]}")
+
+    def _base_images(self) -> list[str]:
+        images: list[str] = []
+        for dockerfile in (self.root / "search-fetcher" / "Dockerfile", self.root / "search-core" / "Dockerfile"):
+            try:
+                lines = dockerfile.read_text(encoding="utf-8").splitlines()
+            except OSError as exc:
+                raise SearchLifecycleError(f"cannot read native search Dockerfile: {dockerfile}") from exc
+            for line in lines:
+                match = re.match(r"^\s*FROM\s+(?:--[^\s]+\s+)*([^\s]+)", line, flags=re.IGNORECASE)
+                if match and match.group(1) not in images:
+                    images.append(match.group(1))
+        return images
+
+    def _image_present(self, image: str) -> bool:
+        try:
+            result = self.runner(["docker", "image", "inspect", image], check=False, capture_output=True, text=True)
+        except OSError as exc:
+            raise SearchLifecycleError("docker command unavailable") from exc
+        return result.returncode == 0
+
+    def _pull_missing_base_images(self) -> None:
+        for image in self._base_images():
+            if self._image_present(image):
+                continue
+            for attempt in range(BASE_IMAGE_PULL_ATTEMPTS):
+                try:
+                    result = self.runner(["docker", "pull", image], check=False, capture_output=True, text=True)
+                except OSError as exc:
+                    raise SearchLifecycleError("docker command unavailable") from exc
+                if result.returncode == 0:
+                    break
+                if attempt + 1 == BASE_IMAGE_PULL_ATTEMPTS:
+                    detail = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "docker pull failed").strip()
+                    raise SearchLifecycleError(f"cannot pull native search base image {image}: {detail[:500]}")
+                self.sleeper(float(attempt + 1))
 
     @staticmethod
     def _default_probe(url: str) -> bool:
@@ -96,7 +139,7 @@ class SearchLifecycle:
     def _ready(self) -> bool:
         fetcher = os.getenv("JINA_LOCAL_SEARCH_FETCHER_URL", "http://127.0.0.1:8082")
         core = os.getenv("JINA_LOCAL_SEARCH_CORE_URL", "http://127.0.0.1:8083")
-        return self.probe(f"{fetcher.rstrip('/')}/healthz") and self.probe(f"{core.rstrip('/')}/healthz")
+        return self.probe(f"{fetcher.rstrip('/')}/readyz") and self.probe(f"{core.rstrip('/')}/healthz")
 
     def _wait_ready(self) -> None:
         deadline = self.clock() + self.start_timeout_seconds
@@ -154,6 +197,7 @@ class SearchLifecycle:
         with self._lock:
             if not self._started or not self._ready():
                 self._watchdog_started = False
+                self._pull_missing_base_images()
                 self._run_compose("up")
                 self._wait_ready()
                 self._started = True

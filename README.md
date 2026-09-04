@@ -82,6 +82,8 @@ CACHE_DIR=/tmp/opencode/jina-local
 
 `search_web`、`parallel_search_web` 和 `search_web_deep` 在缓存未命中时会自动启动这三个服务，并等待 `search-fetcher` / `search-core` readiness。每次原生检索刷新活动时间；最后一次检索完成后 `JINA_LOCAL_SEARCH_IDLE_SECONDS=600` 秒自动停止服务。缓存命中不会唤醒服务。无需为每个 Agent 手工执行 `docker compose up` 或 `stop`。
 
+首次自动启动会从两个原生服务 Dockerfile 读取基础镜像；仅当本地缺失时经 Docker daemon 预拉取并重试三次，再交给 BuildKit 构建。这样可避免 BuildKit 的 Docker Hub token 瞬断直接中止一次搜索会话。
+
 ```bash
 # Embeddings/Reranker/向量检索任务
 docker compose up -d embeddings reranker qdrant
