@@ -50,6 +50,11 @@ def _get_search_deep():
         mod = importlib.util.module_from_spec(spec)
         sys.modules["search_deep"] = mod
         spec.loader.exec_module(mod)  # type: ignore
+        llm_path = ROOT / "mcp-gateway" / "src" / "search_llm.py"
+        llm_spec = importlib.util.spec_from_file_location("search_llm", llm_path)
+        llm_mod = importlib.util.module_from_spec(llm_spec)
+        llm_spec.loader.exec_module(llm_mod)  # type: ignore
+        mod.search_llm = llm_mod
         for name in ("search_web_deep", "search_deep"):
             if hasattr(mod, name) and callable(getattr(mod, name)):
                 return getattr(mod, name), mod
@@ -596,3 +601,88 @@ def test_search_deep_cache():
     finally:
         for p in patches:
             p.stop()
+
+
+def test_search_deep_query_fusion_deduplicates_urls_and_keeps_provenance():
+    fn, mod = _get_search_deep()
+    mod.clear_cache()
+    query = "fusion query unique 314159"
+    calls = []
+    candidates = {
+        query: [
+            {"title": "A", "url": "https://example.com/a", "content": "A content", "source": "local", "retrieved_at": "t1"},
+            {"title": "B", "url": "https://example.com/b", "content": "B content", "source": "local", "retrieved_at": "t1"},
+        ],
+        "fusion variant": [
+            {"title": "B duplicate", "url": "https://EXAMPLE.com/b/", "content": "B variant", "source": "local", "retrieved_at": "t2"},
+            {"title": "C", "url": "https://example.com/c", "content": "C content", "source": "local", "retrieved_at": "t2"},
+        ],
+    }
+
+    def search(search_query, num=3):
+        calls.append(search_query)
+        return candidates[search_query]
+
+    def reader(urls, question=None, **kwargs):
+        return [f"content for {url} {query}" for url in urls]
+
+    with patch.object(mod.search_llm, "plan_queries", return_value=["fusion variant"]), patch.object(mod.search_llm, "rerank_ids", return_value=None):
+        results = fn(query, num=3, chunk_size=100, search_fn=search, reader_fn=reader)
+
+    assert calls == [query, "fusion variant"]
+    assert [item["url"].rstrip("/").lower() for item in results] == [
+        "https://example.com/b",
+        "https://example.com/a",
+        "https://example.com/c",
+    ]
+    assert len(results) == 3
+    assert all(item["source"] == "local" and item["retrieved_at"] in {"t1", "t2"} for item in results)
+
+
+def test_search_deep_llm_rerank_reorders_only_supplied_candidates():
+    fn, mod = _get_search_deep()
+    mod.clear_cache()
+    query = "llm reorder unique 271828"
+    search = MagicMock(return_value=[
+        {"title": "A", "url": "https://example.com/a", "content": "A", "source": "local", "retrieved_at": "t"},
+        {"title": "B", "url": "https://example.com/b", "content": "B", "source": "local", "retrieved_at": "t"},
+        {"title": "C", "url": "https://example.com/c", "content": "C", "source": "local", "retrieved_at": "t"},
+    ])
+    reader = lambda urls, question=None, **kwargs: [f"{query} evidence {url}" for url in urls]
+    seen = {}
+
+    def rerank(query_text, candidates):
+        seen["ids"] = [candidate["id"] for candidate in candidates]
+        return list(reversed(seen["ids"]))
+
+    with patch.object(mod.search_llm, "plan_queries", return_value=[]), patch.object(mod.search_llm, "rerank_ids", side_effect=rerank):
+        results = fn(query, num=3, chunk_size=100, search_fn=search, reader_fn=reader)
+
+    assert [item["url"] for item in results] == [
+        "https://example.com/c",
+        "https://example.com/b",
+        "https://example.com/a",
+    ]
+    assert len(seen["ids"]) == 3
+    assert all(item["source"] == "local" and item["retrieved_at"] == "t" for item in results)
+
+
+def test_search_deep_llm_failures_preserve_baseline_and_never_add_candidates():
+    fn, mod = _get_search_deep()
+    query = "llm failure unique 161803"
+    search = MagicMock(return_value=[
+        {"title": "A", "url": "https://example.com/a", "content": "A", "source": "local", "retrieved_at": "t"},
+        {"title": "B", "url": "https://example.com/b", "content": "B", "source": "local", "retrieved_at": "t"},
+    ])
+    reader = lambda urls, question=None, **kwargs: [f"{query} evidence {url}" for url in urls]
+
+    for planned, reranked in [
+        (RuntimeError("planner"), None),
+        ([], ["unknown"]),
+        ([], ValueError("malformed")),
+    ]:
+        mod._mem_cache.clear()
+        with patch.object(mod.search_llm, "plan_queries", side_effect=planned if isinstance(planned, Exception) else (lambda _query: planned)), patch.object(mod.search_llm, "rerank_ids", side_effect=reranked if isinstance(reranked, Exception) else (lambda _query, _candidates: reranked)):
+            results = fn(query + str(planned) + str(reranked), num=3, chunk_size=100, search_fn=search, reader_fn=reader)
+        assert [item["url"] for item in results] == ["https://example.com/a", "https://example.com/b"]
+        assert all(item["url"] != "https://attacker.example/new" for item in results)
