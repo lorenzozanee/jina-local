@@ -4,6 +4,7 @@
 use_default_settings: true
 
 server:
+  bind_address: 127.0.0.1
   secret_key: "AJYNDcguwO7YzzOv33Huy8uFrB87dMeJ"
   image_proxy: true
 

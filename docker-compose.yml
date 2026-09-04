@@ -96,6 +96,7 @@ services:
       - /tmp/opencode:/tmp/opencode
     environment:
       JINA_LOCAL_SEARCH_PROXY_URL: "${JINA_LOCAL_SEARCH_PROXY_URL:-}"
+      SEARXNG_BIND_ADDRESS: 127.0.0.1
       SEARXNG_PORT: "${SEARXNG_PORT:-8081}"
     restart: 'no'
   search-fetcher:

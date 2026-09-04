@@ -92,6 +92,7 @@ def test_compose_host_network_proxy_and_readiness_contract():
     fetcher_service = compose["services"]["search-fetcher"]
 
     assert search_service["network_mode"] == "host"
+    assert search_service["environment"]["SEARXNG_BIND_ADDRESS"] == "127.0.0.1"
     assert fetcher_service["network_mode"] == "host"
     assert "JINA_LOCAL_SEARCH_PROXY_URL" in compose_text
     assert fetcher_service["environment"]["SEARCH_FETCHER_BIND_ADDR"] == "127.0.0.1"
@@ -101,6 +102,8 @@ def test_compose_host_network_proxy_and_readiness_contract():
     assert entrypoint.stat().st_mode & 0o111
     entrypoint_text = entrypoint.read_text(encoding="utf-8")
     assert "JINA_LOCAL_SEARCH_PROXY_URL" in entrypoint_text
+    assert 'proxy=${JINA_LOCAL_SEARCH_PROXY_URL:-}' in entrypoint_text
+    assert 'must be set' in entrypoint_text
     assert "http://" not in entrypoint_text
     assert "https://" not in entrypoint_text
 
