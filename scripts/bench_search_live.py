@@ -71,31 +71,23 @@ def _provenanced(candidate: dict) -> bool:
     return all(isinstance(candidate.get(field), str) and candidate[field].strip() for field in ("title", "url", "content", "source", "retrieved_at")) and urlsplit(candidate["url"]).scheme in {"http", "https"}
 
 
-def _target_hosts(case: dict) -> set[str]:
-    hosts = set()
-    for target in case.get("required_sources", []):
-        parsed = urlsplit(target if "://" in target else f"https://{target}")
-        if parsed.hostname:
-            hosts.add(parsed.hostname.lower())
-    return hosts
-
-
 def evaluate_case(case: dict) -> dict:
     results = case.get("results") or []
     invalid = [item for item in results if not isinstance(item, dict) or not _provenanced(item)]
     valid = [item for item in results if isinstance(item, dict) and _provenanced(item)]
     target_urls = [canonical_url(target) for target in case.get("targets", [])]
     target_set = set(target_urls)
-    ranks = [index + 1 for index, item in enumerate(valid[:5]) if canonical_url(item["url"]) in target_set]
+    raw_top = results[:5]
+    ranks = [index + 1 for index, item in enumerate(raw_top) if isinstance(item, dict) and _provenanced(item) and canonical_url(item["url"]) in target_set]
     mrr = 1 / ranks[0] if ranks else 0.0
-    gains = [1 if canonical_url(item["url"]) in target_set else 0 for item in valid[:5]]
+    gains = [1 if isinstance(item, dict) and _provenanced(item) and canonical_url(item["url"]) in target_set else 0 for item in raw_top]
     dcg = sum(gain / math.log2(index + 2) for index, gain in enumerate(gains))
-    ideal = sorted(gains, reverse=True)
+    ideal = [1] * min(len(target_set), 5)
     idcg = sum(gain / math.log2(index + 2) for index, gain in enumerate(ideal))
     ndcg = dcg / idcg if idcg else 0.0
-    found_hosts = {urlsplit(item["url"]).hostname.lower() for item in valid if urlsplit(item["url"]).hostname}
-    required_hosts = _target_hosts(case)
-    coverage = len(found_hosts & required_hosts) / len(required_hosts) if required_hosts else 1.0
+    required_sources = {str(source).strip() for source in case.get("required_sources", []) if str(source).strip()}
+    found_sources = {item["source"].strip() for item in valid if item["source"].strip()}
+    coverage = len(found_sources & required_sources) / len(required_sources) if required_sources else 1.0
     failures = []
     provider_status = case.get("provider_status") or {}
     if provider_status.get("code"):
@@ -106,7 +98,7 @@ def evaluate_case(case: dict) -> dict:
         failures.append("INVALID_PROVENANCE")
     if not ranks:
         failures.append("TARGET_NOT_RETRIEVED")
-    if required_hosts and coverage < 1.0:
+    if required_sources and coverage < 1.0:
         failures.append("SOURCE_COVERAGE")
     return {
         "id": case["id"],
@@ -136,8 +128,30 @@ def evaluate_corpus(cases: list[dict]) -> dict:
     }
 
 
+_SECRET_PATTERN = re.compile(r"(?i)\b(?:bearer\s+|(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)\s*[=:]\s*)[^\s,;]+")
+
+
+def _redacted_text(value: object, limit: int) -> str:
+    text = str(value)
+    return _SECRET_PATTERN.sub("[REDACTED]", text)[:limit]
+
+
+def _safe_archive_url(value: object) -> str:
+    parsed = urlsplit(str(value).strip())
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return ""
+    host = parsed.hostname.lower()
+    port = parsed.port
+    if port and not ((parsed.scheme.lower() == "http" and port == 80) or (parsed.scheme.lower() == "https" and port == 443)):
+        host = f"{host}:{port}"
+    path = re.sub(r"/{2,}", "/", parsed.path or "/")
+    if path != "/":
+        path = path.rstrip("/")
+    return urlunsplit((parsed.scheme.lower(), host, path, "", ""))
+
+
 def _sanitized(candidate: dict) -> dict:
-    return {"title": str(candidate.get("title", ""))[:500], "url": canonical_url(str(candidate.get("url", ""))), "content": str(candidate.get("content", ""))[:2000], "source": str(candidate.get("source", ""))[:200], "retrieved_at": str(candidate.get("retrieved_at", ""))[:64]}
+    return {"title": _redacted_text(candidate.get("title", ""), 500), "url": _safe_archive_url(candidate.get("url", "")), "content": _redacted_text(candidate.get("content", ""), 2000), "source": _redacted_text(candidate.get("source", ""), 200), "retrieved_at": _redacted_text(candidate.get("retrieved_at", ""), 64)}
 
 
 def _search_case(case: dict) -> dict:
@@ -199,7 +213,11 @@ def main(argv: list[str] | None = None) -> int:
     output = output_dir / f"{OUTPUT_PREFIX}{timestamp}.json"
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(output)
-    return 0
+    return 0 if report.get("runs") and all(
+        run.get("baseline", {}).get("status") == "PASS"
+        and run.get("enhanced", {"status": "PASS"}).get("status") == "PASS"
+        for run in report["runs"]
+    ) else 1
 
 
 if __name__ == "__main__":

@@ -53,8 +53,8 @@ def test_evaluator_computes_mrr_ndcg_and_source_coverage_from_canonical_urls():
         "required_sources": ["example.org", "example.net"],
         "results": [
             candidate("https://other.test/noise", source="other"),
-            candidate("https://example.net/report#section", source="provider-b"),
-            candidate("https://example.org/paper", source="provider-a"),
+            candidate("https://example.net/report#section", source="example.net"),
+            candidate("https://example.org/paper", source="example.org"),
         ],
     }
 
@@ -85,8 +85,8 @@ def test_evaluator_requires_chinese_english_labels_and_multi_source_targets():
             "targets": ["https://a.test/one", "https://b.test/two"],
             "required_sources": ["a.test", "b.test"],
             "results": [
-                candidate("https://a.test/one", source="a"),
-                candidate("https://b.test/two", source="b"),
+                candidate("https://a.test/one", source="a.test"),
+                candidate("https://b.test/two", source="b.test"),
             ],
         },
     ]
@@ -120,3 +120,82 @@ def test_live_opt_in_is_required_before_runner_can_make_requests(monkeypatch, ca
 
     assert MODULE.main([]) != 0
     assert "JINA_LOCAL_LIVE_SEARCH=1" in capsys.readouterr().out
+
+
+def test_ndcg_uses_all_labeled_targets_for_the_ideal():
+    case = {
+        "id": "missing-target",
+        "query": "research",
+        "language": "en",
+        "targets": ["https://a.test/one", "https://b.test/two"],
+        "results": [candidate("https://a.test/one", source="a.test")],
+    }
+
+    result = MODULE.evaluate_case(case)
+
+    expected = 1 / (1 + 1 / math.log2(3))
+    assert result["ndcg_at_5"] == round(expected, 6)
+
+
+def test_invalid_candidates_keep_their_raw_positions_in_rank_metrics():
+    case = {
+        "id": "invalid-rank",
+        "query": "documentation",
+        "language": "en",
+        "targets": ["https://a.test/one"],
+        "results": [
+            {"title": "synthetic", "url": "https://fake.test/"},
+            candidate("https://a.test/one", source="a.test"),
+        ],
+    }
+
+    result = MODULE.evaluate_case(case)
+
+    assert result["mrr"] == 0.5
+    assert result["ndcg_at_5"] == round(1 / math.log2(3), 6)
+    assert "INVALID_PROVENANCE" in result["failure_codes"]
+
+
+def test_source_coverage_requires_candidate_source_labels():
+    case = {
+        "id": "source-label",
+        "query": "documentation",
+        "language": "en",
+        "targets": ["https://a.test/one"],
+        "required_sources": ["a.test"],
+        "results": [candidate("https://a.test/one", source="untrusted-source")],
+    }
+
+    result = MODULE.evaluate_case(case)
+
+    assert result["source_coverage"] == 0.0
+    assert result["status"] == "FAIL"
+    assert "SOURCE_COVERAGE" in result["failure_codes"]
+
+
+def test_main_fails_when_a_live_corpus_run_fails(monkeypatch, tmp_path):
+    monkeypatch.setenv("JINA_LOCAL_LIVE_SEARCH", "1")
+    monkeypatch.setattr(
+        MODULE,
+        "run_live",
+        lambda: {"runs": [{"baseline": {"status": "FAIL"}}]},
+    )
+
+    assert MODULE.main(["--output-dir", str(tmp_path)]) != 0
+
+
+def test_sanitized_evidence_redacts_credentials_queries_and_secrets():
+    result = MODULE._sanitized(
+        candidate(
+            "https://user:password@example.test/path?token=abc123&safe=1#fragment",
+            title="Bearer secret-token api_key=visible",
+            source="provider",
+        )
+        | {"content": "password=hunter2 access_token=abc123"}
+    )
+
+    assert result["url"] == "https://example.test/path"
+    assert "password" not in result["title"]
+    assert "secret-token" not in result["title"]
+    assert "hunter2" not in result["content"]
+    assert "abc123" not in result["content"]
