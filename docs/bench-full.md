@@ -74,3 +74,6 @@ env GOCACHE=/tmp/jina-local-go-cache /tmp/jina-local-go/go/bin/go test ./...
 cargo test --manifest-path search-core/Cargo.toml
 docker compose --env-file .env.example config --quiet
 ```
+## 搜索会话生命周期
+
+本地 `search_web` / `search_web_deep` 缓存未命中时自动启动 SearXNG、Go fetcher、Rust core，等待 readiness 后检索；最后一次原生检索完成十分钟后自动停止。`scripts/test_search_lifecycle_runtime.py --idle-seconds 3` 是可重复的 Docker 实机验证，运行后始终清理三项服务。

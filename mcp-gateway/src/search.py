@@ -13,6 +13,23 @@ from datetime import UTC, datetime
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    from .search_lifecycle import SearchLifecycleError, get_search_lifecycle
+except ImportError:
+    try:
+        from search_lifecycle import SearchLifecycleError, get_search_lifecycle
+    except ImportError:
+        import importlib.util
+
+        _lifecycle_path = pathlib.Path(__file__).with_name("search_lifecycle.py")
+        _lifecycle_spec = importlib.util.spec_from_file_location("search_lifecycle", _lifecycle_path)
+        if _lifecycle_spec is None or _lifecycle_spec.loader is None:
+            raise
+        _lifecycle_module = importlib.util.module_from_spec(_lifecycle_spec)
+        _lifecycle_spec.loader.exec_module(_lifecycle_module)
+        SearchLifecycleError = _lifecycle_module.SearchLifecycleError
+        get_search_lifecycle = _lifecycle_module.get_search_lifecycle
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = pathlib.Path("/tmp/opencode/jina-local")
@@ -448,22 +465,29 @@ def _matches_site(result: dict, host: str | None) -> bool:
 
 def _fetch_candidates(query: str, num: int) -> list[dict]:
     try:
-        fetched = requests.post(
-            f"{SEARCH_FETCHER_URL}/v1/fetch", json={"query": query, "limit": num * 2}, timeout=SEARCH_TIMEOUT
-        )
-        if fetched.status_code == 503:
-            raise SearchUnavailableError("NO_RETRIEVAL_BACKEND: fetcher unavailable")
-        fetched.raise_for_status()
-        candidates = fetched.json().get("candidates", [])
-        ranked = requests.post(
-            f"{SEARCH_CORE_URL}/v1/rank", json={"query": query, "limit": num, "candidates": candidates}, timeout=SEARCH_TIMEOUT
-        )
-        ranked.raise_for_status()
-        return [item for item in ranked.json().get("results", []) if _is_provenanced_result(item)]
+        with _native_lifecycle().lease():
+            fetched = requests.post(
+                f"{SEARCH_FETCHER_URL}/v1/fetch", json={"query": query, "limit": num * 2}, timeout=SEARCH_TIMEOUT
+            )
+            if fetched.status_code == 503:
+                raise SearchUnavailableError("NO_RETRIEVAL_BACKEND: fetcher unavailable")
+            fetched.raise_for_status()
+            candidates = fetched.json().get("candidates", [])
+            ranked = requests.post(
+                f"{SEARCH_CORE_URL}/v1/rank", json={"query": query, "limit": num, "candidates": candidates}, timeout=SEARCH_TIMEOUT
+            )
+            ranked.raise_for_status()
+            return [item for item in ranked.json().get("results", []) if _is_provenanced_result(item)]
     except SearchUnavailableError:
         raise
+    except SearchLifecycleError as exc:
+        raise SearchUnavailableError(f"NO_RETRIEVAL_BACKEND: {exc}") from exc
     except requests.RequestException as exc:
         raise SearchUnavailableError(f"NO_RETRIEVAL_BACKEND: native search services unavailable ({exc})") from exc
+
+
+def _native_lifecycle():
+    return get_search_lifecycle()
 
 
 def search_web(query: str, num: int = DEFAULT_NUM) -> list[dict]:
