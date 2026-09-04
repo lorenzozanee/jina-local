@@ -218,17 +218,21 @@ def _fuse_search_results(query: str, planned_queries: list[str], num: int, searc
                 raise
             continue
         if not isinstance(found, list):
+            if search_query == query:
+                raise TypeError("original search response must be a list")
             continue
         for rank, item in enumerate(found[:num], 1):
             if not isinstance(item, dict):
                 continue
-            title = item.get("title", "") or ""
-            url = item.get("url", "") or ""
-            content = item.get("content", "") or ""
-            if not isinstance(content, str):
-                content = str(content)
-            if not isinstance(title, str) or not isinstance(url, str) or not title.strip() or not url.strip():
+            required_fields = ("title", "url", "content", "source", "retrieved_at")
+            if any(
+                not isinstance(item.get(field), str) or not item[field].strip()
+                for field in required_fields
+            ):
                 continue
+            title = item["title"]
+            url = item["url"]
+            content = item["content"]
             key = _canonical_url(url)
             if key not in fused:
                 fused[key] = dict(item)
@@ -401,10 +405,11 @@ def search_web_deep(
     num = _validate_num(num)
     chunk_size = _validate_chunk_size(chunk_size)
 
-    # cache hit
-    cached = _read_cache(query, num, chunk_size)
-    if cached is not None:
-        return cached
+    llm_enabled = search_llm.is_enabled()
+    if not llm_enabled:
+        cached = _read_cache(query, num, chunk_size)
+        if cached is not None:
+            return cached
 
     search_callable = _get_search_fn(search_fn)
     reader_callable = _get_reader_fn(reader_fn)
@@ -606,8 +611,8 @@ def search_web_deep(
         results.append(output)
 
     results = _apply_llm_rerank(results, query)
-    # cache write
-    _write_cache(query, num, chunk_size, results)
+    if not llm_enabled:
+        _write_cache(query, num, chunk_size, results)
     return results
 
 
