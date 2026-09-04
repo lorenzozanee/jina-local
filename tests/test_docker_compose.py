@@ -9,6 +9,7 @@ TDD 红阶段：当前为骨架注释，全部应 FAIL
 import pathlib
 
 import pytest
+import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
@@ -79,8 +80,29 @@ def test_compose_defines_native_search_services():
     text = _active_text()
     assert "search-fetcher:" in text
     assert "search-core:" in text
-    assert '"127.0.0.1:8082:8082"' in text
-    assert '"127.0.0.1:8083:8083"' in text
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    assert compose["services"]["search-fetcher"]["network_mode"] == "host"
+    assert compose["services"]["search-core"]["ports"] == ["127.0.0.1:8083:8083"]
+
+
+def test_compose_host_network_proxy_and_readiness_contract():
+    compose_text = COMPOSE.read_text(encoding="utf-8")
+    compose = yaml.safe_load(compose_text)
+    search_service = compose["services"]["search"]
+    fetcher_service = compose["services"]["search-fetcher"]
+
+    assert search_service["network_mode"] == "host"
+    assert fetcher_service["network_mode"] == "host"
+    assert "JINA_LOCAL_SEARCH_PROXY_URL" in compose_text
+    assert fetcher_service["environment"]["SEARCH_FETCHER_BIND_ADDR"] == "127.0.0.1"
+    assert "search-config:/etc/searxng" in compose_text
+
+    entrypoint = ROOT / "searxng" / "entrypoint.sh"
+    assert entrypoint.stat().st_mode & 0o111
+    entrypoint_text = entrypoint.read_text(encoding="utf-8")
+    assert "JINA_LOCAL_SEARCH_PROXY_URL" in entrypoint_text
+    assert "http://" not in entrypoint_text
+    assert "https://" not in entrypoint_text
 
 
 def test_compose_services_use_gpu():
@@ -105,10 +127,10 @@ def test_compose_has_services_top_level():
 def test_compose_uses_configurable_search_port_and_reader_token():
     """Search 与 Reader 必须由 .env 驱动，避免端口冲突或 Reader 只绑定容器回环。"""
     text = _active_text()
-    assert '${SEARXNG_PORT:-8081}:8080' in text
+    assert 'SEARXNG_PORT: "${SEARXNG_PORT:-8081}"' in text
     assert 'CRAWL4AI_API_TOKEN: "${CRAWL4AI_API_TOKEN:?' in text
-    assert 'SEARXNG_PORT: "8080"' in text
-    assert './searxng:/etc/searxng' in text
+    assert 'network_mode: host' in text
+    assert './searxng/settings.yml:/etc/searxng-template/settings.yml:ro' in text
     assert 'read_only: true' not in text
     assert 'cap_drop:' not in text
     settings = ROOT / 'searxng' / 'settings.yml'

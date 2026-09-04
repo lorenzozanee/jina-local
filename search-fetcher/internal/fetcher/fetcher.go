@@ -36,6 +36,10 @@ func New(searxngURL string, timeout time.Duration) *Fetcher {
 	return &Fetcher{strings.TrimRight(searxngURL, "/"), &http.Client{Timeout: timeout}}
 }
 
+func (f *Fetcher) Probe(ctx context.Context, query string) Response {
+	return f.Fetch(ctx, query, 1)
+}
+
 func (f *Fetcher) Fetch(ctx context.Context, query string, limit int) Response {
 	if strings.TrimSpace(query) == "" {
 		return Response{Code: "INVALID_QUERY", Providers: []ProviderStatus{{Name: "searxng", Status: "skipped", Error: "query is required"}}}

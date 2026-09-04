@@ -87,22 +87,26 @@ services:
     # pin digest 示例: searxng/searxng:2025.9.1@sha256:PLACEHOLDER_SEARXNG_DIGEST
     pull_policy: missing
     profiles: ["full", "search"]
-    ports:
-      - "${SEARXNG_PORT:-8081}:8080"
+    network_mode: host
+    entrypoint: ["/usr/local/bin/jina-local-searxng-entrypoint.sh"]
     volumes:
-      - ./searxng:/etc/searxng
+      - ./searxng/settings.yml:/etc/searxng-template/settings.yml:ro
+      - ./searxng/entrypoint.sh:/usr/local/bin/jina-local-searxng-entrypoint.sh:ro
+      - search-config:/etc/searxng
       - /tmp/opencode:/tmp/opencode
-    env_file: .env
     environment:
-      SEARXNG_PORT: "8080"
+      JINA_LOCAL_SEARCH_PROXY_URL: "${JINA_LOCAL_SEARCH_PROXY_URL:-}"
+      SEARXNG_PORT: "${SEARXNG_PORT:-8081}"
     restart: 'no'
   search-fetcher:
     build: ./search-fetcher
     profiles: ["full", "search"]
-    ports:
-      - "127.0.0.1:8082:8082"
+    network_mode: host
     environment:
-      SEARXNG_URL: http://search:8080
+      SEARXNG_URL: "http://127.0.0.1:${SEARXNG_PORT:-8081}"
+      SEARCH_FETCHER_BIND_ADDR: 127.0.0.1
+      SEARCH_FETCHER_PORT: "${SEARCH_FETCHER_PORT:-8082}"
+      SEARCH_READINESS_QUERY: "${JINA_LOCAL_SEARCH_READINESS_QUERY:-OpenCode docs}"
     restart: 'no'
   search-core:
     build: ./search-core
@@ -126,3 +130,4 @@ services:
 volumes:
   hf-cache:
   qdrant-storage:
+  search-config:
