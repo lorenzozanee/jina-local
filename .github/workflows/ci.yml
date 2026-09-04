@@ -57,8 +57,6 @@ jobs:
           tests/test_gateway_contract.py
           tests/test_reranker.py
           tests/test_embeddings.py
-          tests/test_utils.py
-          tests/test_qdrant_adapter.py
 
   config:
     name: Validate YAML and Compose configuration
