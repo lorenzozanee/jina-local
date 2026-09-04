@@ -1,12 +1,13 @@
 import importlib
 import json
 import sys
+from pathlib import Path
 
 
-
-ROOT = "/home/cc/jina-local/.worktrees/codex-search-egress-llm"
-if f"{ROOT}/mcp-gateway/src" not in sys.path:
-    sys.path.insert(0, f"{ROOT}/mcp-gateway/src")
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_PATH = str(ROOT / "mcp-gateway" / "src")
+if SOURCE_PATH not in sys.path:
+    sys.path.insert(0, SOURCE_PATH)
 
 
 class FakeResponse:
