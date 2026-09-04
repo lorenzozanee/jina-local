@@ -80,21 +80,25 @@ CACHE_DIR=/tmp/opencode/jina-local
 
 搜索链路由三个本地服务组成：Go `search-fetcher` 只从 SearXNG 读取候选并报告来源状态，Rust `search-core` 负责 URL 规范化、`site:` 过滤、去重和排序，Python MCP 网关保存带 TTL 的 provenance cache。Linux 部署使用 host network，让 SearXNG 通过 `JINA_LOCAL_SEARCH_PROXY_URL` 访问主机代理；搜索后端不可用时工具返回 `NO_RETRIEVAL_BACKEND`，不会生成网页、URL 或摘要。
 
+`search_web`、`parallel_search_web` 和 `search_web_deep` 在缓存未命中时会自动启动这三个服务，并等待 `search-fetcher` / `search-core` readiness。每次原生检索刷新活动时间；最后一次检索完成后 `JINA_LOCAL_SEARCH_IDLE_SECONDS=600` 秒自动停止服务。缓存命中不会唤醒服务。无需为每个 Agent 手工执行 `docker compose up` 或 `stop`。
+
 ```bash
 # Embeddings/Reranker/向量检索任务
 docker compose up -d embeddings reranker qdrant
 
-# 需要 Reader 或 Search 的任务
+# 需要 Reader 的任务
 docker compose --profile reader up -d reader
-docker compose --profile search up -d search
-curl http://localhost:8082/healthz
+
+# 搜索由 MCP 工具在缓存未命中时自动启动；仅用于手工诊断
+docker compose --profile search up -d search search-fetcher search-core
+curl http://localhost:8082/readyz
 curl http://localhost:8083/healthz
 
 # 全量任务（仅任务期间使用）
 docker compose --profile full up -d
 
-# 结束任务：停止高内存服务；无需删除模型缓存或 Qdrant 数据卷
-docker compose stop embeddings reranker reader search qdrant
+# 结束任务：停止手工启动的服务；搜索自动生命周期无需手工 stop
+docker compose stop embeddings reranker reader qdrant
 
 # 验证
 docker compose ps
@@ -102,7 +106,7 @@ auto_stop=./scripts/stop-idle-jina-local.sh
 [ -x "$auto_stop" ] && "$auto_stop"
 ```
 
-Agent 生命周期规则：启动前检查 `docker compose ps`，只启动当前任务需要的服务；完成或失败退出前执行停止命令。不要使用 `docker compose up -d` 作为后台常驻服务，不要修改 `restart: 'no'`。TEI Embeddings/Reranker 是高内存服务，Reader/Search/Qdrant 也不应无人使用时常驻。
+Agent 生命周期规则：启动前检查 `docker compose ps`，只启动当前任务需要的服务；搜索通过网关自动管理，其他服务完成或失败退出前执行停止命令。不要使用 `docker compose up -d` 作为后台常驻服务，不要修改 `restart: 'no'`。TEI Embeddings/Reranker 是高内存服务，Reader/Qdrant 也不应无人使用时常驻。
 
 `docker-compose.yml` 要点（见 [docker-compose.yml](docker-compose.yml)）：5 服务、共享单一 `hf-cache:/data` 卷、无自动重启、`profiles: ["full","reader","search"]` 按需启动，`runtime: nvidia` + `deploy.resources.reservations.devices` 双配置兼容新旧 compose。
 

@@ -233,6 +233,17 @@ def test_search_calls_fetcher_then_core(monkeypatch, tmp_path):
     mod = _load_isolated(monkeypatch, tmp_path)
     calls = []
 
+    class Lease:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    class Lifecycle:
+        def lease(self):
+            return Lease()
+
     class Response:
         def __init__(self, payload):
             self.status_code = 200
@@ -251,6 +262,7 @@ def test_search_calls_fetcher_then_core(monkeypatch, tmp_path):
         return Response({"results": [_candidate("OpenCode docs", 1, "opencode.ai")]})
 
     monkeypatch.setattr(mod.requests, "post", fake_post)
+    monkeypatch.setattr(mod, "_native_lifecycle", lambda: Lifecycle())
     results = mod.search_web("OpenCode docs", num=3)
     assert [url for url, _ in calls] == [
         mod.SEARCH_FETCHER_URL + "/v1/fetch",
