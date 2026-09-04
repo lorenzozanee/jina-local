@@ -16,7 +16,19 @@ from bs4 import BeautifulSoup
 try:
     from .search_lifecycle import SearchLifecycleError, get_search_lifecycle
 except ImportError:
-    from search_lifecycle import SearchLifecycleError, get_search_lifecycle
+    try:
+        from search_lifecycle import SearchLifecycleError, get_search_lifecycle
+    except ImportError:
+        import importlib.util
+
+        _lifecycle_path = pathlib.Path(__file__).with_name("search_lifecycle.py")
+        _lifecycle_spec = importlib.util.spec_from_file_location("search_lifecycle", _lifecycle_path)
+        if _lifecycle_spec is None or _lifecycle_spec.loader is None:
+            raise
+        _lifecycle_module = importlib.util.module_from_spec(_lifecycle_spec)
+        _lifecycle_spec.loader.exec_module(_lifecycle_module)
+        SearchLifecycleError = _lifecycle_module.SearchLifecycleError
+        get_search_lifecycle = _lifecycle_module.get_search_lifecycle
 
 logger = logging.getLogger(__name__)
 

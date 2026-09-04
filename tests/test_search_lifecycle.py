@@ -130,6 +130,16 @@ def test_missing_docker_cli_is_a_lifecycle_error(tmp_path):
             pass
 
 
+def test_search_module_can_load_as_standalone_file():
+    search_source = ROOT / "mcp-gateway" / "src" / "search.py"
+    spec = importlib.util.spec_from_file_location("standalone_search", search_source)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.pop("search_lifecycle", None)
+    spec.loader.exec_module(module)
+    assert callable(module.search_web)
+
+
 def test_search_cache_hit_does_not_acquire_lifecycle(monkeypatch, tmp_path):
     search_source = ROOT / "mcp-gateway" / "src" / "search.py"
     spec = importlib.util.spec_from_file_location("search", search_source)
