@@ -10,3 +10,4 @@ data/
 .env
 /tmp/
 .worktrees/
+search-core/target/
