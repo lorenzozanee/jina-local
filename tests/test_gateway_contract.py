@@ -79,6 +79,14 @@ def test_gateway_exposes_search_web_tool():
     assert callable(getattr(mod, "search_web"))
 
 
+def test_gateway_surfaces_search_unavailability_without_mock_results(monkeypatch):
+    """搜索模块无法加载时，网关必须让调用者看见失败而不是伪造结果。"""
+    mod = _load_gateway_module()
+    monkeypatch.setattr(mod, "_search_search_web", None)
+    with pytest.raises(RuntimeError, match="NO_RETRIEVAL_BACKEND"):
+        mod.search_web("OpenCode official documentation")
+
+
 def test_gateway_exposes_sort_by_relevance_tool():
     """网关需暴露 sort_by_relevance 工具（兼容 jina sort_by_relevance）"""
     mod = _load_gateway_module()

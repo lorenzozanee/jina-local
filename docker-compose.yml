@@ -96,6 +96,20 @@ services:
     environment:
       SEARXNG_PORT: "8080"
     restart: 'no'
+  search-fetcher:
+    build: ./search-fetcher
+    profiles: ["full", "search"]
+    ports:
+      - "127.0.0.1:8082:8082"
+    environment:
+      SEARXNG_URL: http://search:8080
+    restart: 'no'
+  search-core:
+    build: ./search-core
+    profiles: ["full", "search"]
+    ports:
+      - "127.0.0.1:8083:8083"
+    restart: 'no'
   qdrant:
     image: qdrant/qdrant:latest
     # pin digest 示例: qdrant/qdrant:v1.13.2@sha256:PLACEHOLDER_QDRANT_DIGEST

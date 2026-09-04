@@ -78,6 +78,8 @@ CACHE_DIR=/tmp/opencode/jina-local
 
 默认不让 Docker 自动重启任何服务，避免 TEI 模型和 Qdrant 常驻占用内存。Agent 开始对应 Web 任务时启动所需服务，任务结束后立即停止。
 
+搜索链路由三个本地服务组成：Go `search-fetcher` 只从 SearXNG 读取候选并报告来源状态，Rust `search-core` 负责 URL 规范化、`site:` 过滤、去重和排序，Python MCP 网关保存带 TTL 的 provenance cache。搜索后端不可用时工具返回 `NO_RETRIEVAL_BACKEND`，不会生成看似合理的网页、URL 或摘要。
+
 ```bash
 # Embeddings/Reranker/向量检索任务
 docker compose up -d embeddings reranker qdrant
@@ -85,6 +87,8 @@ docker compose up -d embeddings reranker qdrant
 # 需要 Reader 或 Search 的任务
 docker compose --profile reader up -d reader
 docker compose --profile search up -d search
+curl http://localhost:8082/healthz
+curl http://localhost:8083/healthz
 
 # 全量任务（仅任务期间使用）
 docker compose --profile full up -d

@@ -65,6 +65,22 @@ def _get_search_callable():
     pytest.fail(f"功能缺失: {path} 未暴露 search_web/search 可调用入口")
 
 
+def _get_search_module():
+    path = _resolve_first(SEARCH_CANDIDATES)
+    assert path is not None, f"功能缺失: Search 实现不存在，检查 {SEARCH_CANDIDATES}"
+    return _load_module(path)
+
+
+def _retrieved_candidate(query: str) -> dict:
+    return {
+        "title": f"{query} documentation",
+        "url": "https://example.com/docs",
+        "content": f"Retrieved documentation about {query}.",
+        "source": "searxng",
+        "retrieved_at": "2026-09-04T00:00:00Z",
+    }
+
+
 def test_reader_returns_markdown_string_for_url():
     """Reader 给定 URL 应返回 markdown 字符串（非空）"""
     read_fn = _get_reader_callable()
@@ -91,17 +107,24 @@ def test_reader_requires_url_param():
         read_fn()  # type: ignore[call-arg]
 
 
-def test_search_returns_list_for_query():
-    """Search 给定 query 应返回列表"""
-    search_fn = _get_search_callable()
+def test_search_returns_list_for_retrieved_query(monkeypatch, tmp_path):
+    """Search 给定真实候选时返回列表，而不是伪造断网结果。"""
+    mod = _get_search_module()
+    monkeypatch.setattr(mod, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(mod, "_fetch_candidates", lambda query, num: [_retrieved_candidate(query)], raising=False)
+    search_fn = mod.search_web
     results = search_fn(query="jina ai embeddings")
     assert isinstance(results, list), "功能缺失: search_web 应返回 list"
     assert len(results) > 0, "功能缺失: search_web 对常见 query 应返回非空列表"
+    assert results[0]["source"] == "searxng"
 
 
-def test_search_result_items_contain_title_url_content():
-    """Search 单条结果需包含 title/url/content 三字段"""
-    search_fn = _get_search_callable()
+def test_search_result_items_contain_retrieval_provenance(monkeypatch, tmp_path):
+    """Search 单条真实结果需包含 MCP 字段与检索来源。"""
+    mod = _get_search_module()
+    monkeypatch.setattr(mod, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(mod, "_fetch_candidates", lambda query, num: [_retrieved_candidate(query)], raising=False)
+    search_fn = mod.search_web
     results = search_fn(query="openai gpt-4")
     assert isinstance(results, list) and len(results) > 0
     first = results[0]
@@ -109,6 +132,8 @@ def test_search_result_items_contain_title_url_content():
     for field in ("title", "url", "content"):
         assert field in first, f"功能缺失: search 结果项缺少字段 {field}，实际 {list(first.keys())}"
         assert isinstance(first[field], str) and len(first[field]) > 0
+    assert first["source"] == "searxng"
+    assert first["retrieved_at"] == "2026-09-04T00:00:00Z"
 
 
 def test_search_requires_query_param():

@@ -1,12 +1,14 @@
-"""本地 Search 聚合：SearXNG 优先 -> DuckDuckGo/Bing/Brave fallback -> 语义 stub，带去重、缓存、并发、严格校验"""
+"""本地 Search 聚合：仅返回可追溯的检索结果。"""
 import hashlib
 import json
 import logging
 import os
 import pathlib
 import re
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
 
 import requests
 from bs4 import BeautifulSoup
@@ -17,9 +19,13 @@ CACHE_DIR = pathlib.Path("/tmp/opencode/jina-local")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 SEARXNG_URL = os.getenv("SEARXNG_URL", "http://127.0.0.1:8081")
+SEARCH_FETCHER_URL = os.getenv("JINA_LOCAL_SEARCH_FETCHER_URL", "http://127.0.0.1:8082")
+SEARCH_CORE_URL = os.getenv("JINA_LOCAL_SEARCH_CORE_URL", "http://127.0.0.1:8083")
 SEARXNG_TIMEOUT = 5
 DEFAULT_NUM = 5
 SEARCH_TIMEOUT = 5
+SEARCH_CACHE_TTL_SECONDS = float(os.getenv("JINA_LOCAL_SEARCH_CACHE_TTL_SECONDS", "300"))
+CACHE_SCHEMA_VERSION = 2
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -27,6 +33,15 @@ HEADERS = {
     "X-Real-IP": "127.0.0.1",
     "X-Forwarded-For": "127.0.0.1",
 }
+
+
+class SearchUnavailableError(RuntimeError):
+    """Raised when every configured search backend is unavailable or empty."""
+
+    code = "NO_RETRIEVAL_BACKEND"
+
+    def __init__(self, message: str = code):
+        super().__init__(message)
 
 
 def _validate_query(query: str) -> str:
@@ -40,25 +55,79 @@ def _cache_path(query: str) -> pathlib.Path:
     return CACHE_DIR / f"search-{key}.json"
 
 
+def _is_provenanced_result(item: object) -> bool:
+    if not isinstance(item, dict):
+        return False
+    return all(isinstance(item.get(field), str) and item[field].strip() for field in (
+        "title", "url", "content", "source", "retrieved_at"
+    ))
+
+
+def _discard_cache(path: pathlib.Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.debug("cache discard failed %s: %s", path, exc)
+
+
 def _read_cache(query: str) -> list[dict] | None:
     p = _cache_path(query)
     if p.exists():
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
-            if isinstance(data, list) and data:
-                return data
+            if not isinstance(data, dict):
+                _discard_cache(p)
+                return None
+            if data.get("schema_version") != CACHE_SCHEMA_VERSION or data.get("query") != query:
+                _discard_cache(p)
+                return None
+            expires_at = data.get("expires_at")
+            results = data.get("results")
+            if not isinstance(expires_at, (int, float)) or expires_at <= time.time():
+                _discard_cache(p)
+                return None
+            if isinstance(results, list) and results and all(_is_provenanced_result(item) for item in results):
+                return results
+            _discard_cache(p)
         except Exception as e:
             logger.debug("cache read fail %s: %s", query, e)
+            _discard_cache(p)
     return None
 
 
 def _write_cache(query: str, results: list[dict]) -> None:
+    if not results or not all(_is_provenanced_result(item) for item in results):
+        return
     p = _cache_path(query)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+        now = time.time()
+        payload = {
+            "schema_version": CACHE_SCHEMA_VERSION,
+            "query": query,
+            "created_at": now,
+            "expires_at": now + SEARCH_CACHE_TTL_SECONDS,
+            "results": results,
+        }
+        temporary = p.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(p)
     except Exception as e:
         logger.debug("cache write fail %s: %s", query, e)
+
+
+def _retrieved_at() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _with_provenance(title: str, url: str, content: str, source: str) -> dict:
+    return {
+        "title": title,
+        "url": url,
+        "content": content,
+        "source": source,
+        "retrieved_at": _retrieved_at(),
+    }
 
 
 def _normalize_url(url: str) -> str:
@@ -180,7 +249,7 @@ def _fetch_searxng(query: str, num: int) -> list[dict] | None:
                 continue
             if not content:
                 content = title
-            out.append({"title": title, "url": url, "content": content})
+            out.append(_with_provenance(title, url, content, "searxng"))
             if len(out) >= num * 2:
                 break
         return out if out else None
@@ -275,7 +344,7 @@ def _search_duckduckgo(query: str, num: int) -> list[dict]:
             if not content:
                 content = title + f" — related to {query}"
             if title and url:
-                out.append({"title": title, "url": url, "content": content})
+                out.append(_with_provenance(title, url, content, "duckduckgo"))
             if len(out) >= num:
                 break
         return out
@@ -317,7 +386,7 @@ def _search_bing(query: str, num: int) -> list[dict]:
             if not content:
                 content = title + f" — {query}"
             if title and url:
-                out.append({"title": title, "url": url, "content": content})
+                out.append(_with_provenance(title, url, content, "bing"))
             if len(out) >= num:
                 break
         return out
@@ -350,7 +419,7 @@ def _search_brave(query: str, num: int) -> list[dict]:
             if not content:
                 content = title
             if title and url:
-                out.append({"title": title, "url": url, "content": content})
+                out.append(_with_provenance(title, url, content, "brave"))
             if len(out) >= num:
                 break
         return out
@@ -359,36 +428,42 @@ def _search_brave(query: str, num: int) -> list[dict]:
         return []
 
 
-def _stub_results(query: str, num: int) -> list[dict]:
-    """Fallback 2: 基于 query 的语义 stub，保证含关键词、去重、多样性"""
-    q = query.strip()
-    # ensure at least max(num, 5) candidates for ranking diversity
-    count = max(num, 5)
-    domains = ["en.wikipedia.org", "arxiv.org", "jina.ai", "huggingface.co", "learn.microsoft.com", "github.com", "medium.com"]
-    titles_suffix = [
-        "Overview and Applications",
-        "Recent Advances and Research",
-        "Comprehensive Guide",
-        "Technical Deep Dive",
-        "Best Practices and Examples",
-        "Comparison and Analysis",
-        "Future Directions",
-    ]
-    out: list[dict] = []
-    for i in range(count):
-        domain = domains[i % len(domains)]
-        suffix = titles_suffix[i % len(titles_suffix)]
-        title = f"{q} — {suffix} ({i+1})"
-        # unique url per i
-        url_path = hashlib.md5(f"{q}{i}".encode()).hexdigest()[:8]
-        url = f"https://{domain}/topics/{urllib.parse.quote(q.replace(' ', '-'))}/{url_path}?q={urllib.parse.quote(q)}"
-        content = (
-            f"This result discusses {q} in depth. Covering background, methods, and recent advances related to {q}. "
-            f"Section {i+1}: overview of {q}, including key concepts, implementation details, and comparative analysis of {q} "
-            f"with related techniques. Detailed insights about {q} for practitioners."
+def _site_host(query: str) -> str | None:
+    match = re.search(r"(?:^|\s)site:([^\s]+)", query, flags=re.IGNORECASE)
+    if not match:
+        return None
+    host = match.group(1).lower().strip().rstrip("/")
+    return host.removeprefix("https://").removeprefix("http://").split("/", 1)[0] or None
+
+
+def _matches_site(result: dict, host: str | None) -> bool:
+    if host is None:
+        return True
+    candidate_host = urllib.parse.urlparse(str(result.get("url", ""))).hostname
+    if not candidate_host:
+        return False
+    candidate_host = candidate_host.lower()
+    return candidate_host == host or candidate_host.endswith(f".{host}")
+
+
+def _fetch_candidates(query: str, num: int) -> list[dict]:
+    try:
+        fetched = requests.post(
+            f"{SEARCH_FETCHER_URL}/v1/fetch", json={"query": query, "limit": num * 2}, timeout=SEARCH_TIMEOUT
         )
-        out.append({"title": title, "url": url, "content": content})
-    return out[:num]
+        if fetched.status_code == 503:
+            raise SearchUnavailableError("NO_RETRIEVAL_BACKEND: fetcher unavailable")
+        fetched.raise_for_status()
+        candidates = fetched.json().get("candidates", [])
+        ranked = requests.post(
+            f"{SEARCH_CORE_URL}/v1/rank", json={"query": query, "limit": num, "candidates": candidates}, timeout=SEARCH_TIMEOUT
+        )
+        ranked.raise_for_status()
+        return [item for item in ranked.json().get("results", []) if _is_provenanced_result(item)]
+    except SearchUnavailableError:
+        raise
+    except requests.RequestException as exc:
+        raise SearchUnavailableError(f"NO_RETRIEVAL_BACKEND: native search services unavailable ({exc})") from exc
 
 
 def search_web(query: str, num: int = DEFAULT_NUM) -> list[dict]:
@@ -414,49 +489,14 @@ def search_web(query: str, num: int = DEFAULT_NUM) -> list[dict]:
         # still valid cache
         return truncated
 
-    # 2. 优先 SearXNG
-    searx_results = _fetch_searxng(query, num)
-    if searx_results and len(searx_results) >= 2:
-        merged = _dedup_results(searx_results)
-        ranked = _rank_results(merged, query)
-        truncated = ranked[:num]
-        if len(truncated) >= 3:
-            _write_cache(query, truncated if len(truncated) >= num else ranked)
-            return truncated
+    candidates = _fetch_candidates(query, num)
+    if not candidates:
+        raise SearchUnavailableError("NO_RETRIEVAL_BACKEND: no backend returned a valid result")
 
-    # 3. Fallback 1: DuckDuckGo + Bing (+ Brave if key)
-    collected: list[dict] = []
-    if searx_results:
-        collected.extend(searx_results)
-    # sequential fallback (could be parallel but simple)
-    for fetcher in (_search_duckduckgo, _search_bing, _search_brave):
-        try:
-            r = fetcher(query, num * 2)
-            if r:
-                collected.extend(r)
-        except Exception as e:
-            logger.debug("fallback fetcher %s fail: %s", fetcher.__name__, e)
-
-    if collected:
-        # 始终混入 stub 参与 ranking，提升相关性与兜底
-        stub_pool = _stub_results(query, num)
-        collected.extend(stub_pool)
-        merged = _dedup_results(collected)
-        ranked = _rank_results(merged, query)
-        truncated = ranked[:num]
-        # 若 ranking 后仍未达 num，继续补 stub
-        if len(truncated) < num:
-            needed = num - len(truncated)
-            extra_stub = _stub_results(query, needed + 2)
-            truncated.extend([s for s in extra_stub if _normalize_url(s["url"]) not in {_normalize_url(u["url"]) for u in truncated}])
-            truncated = _dedup_results(truncated)
-            truncated = _rank_results(truncated, query)[:num]
-        _write_cache(query, ranked if len(ranked) >= num else truncated)
-        return truncated
-
-    # 4. Fallback 2: stub
-    stub = _stub_results(query, num)
-    ranked = _rank_results(stub, query)
+    filtered = [item for item in candidates if _matches_site(item, _site_host(query))]
+    if not filtered:
+        return []
+    ranked = _rank_results(_dedup_results(filtered), query)
     truncated = ranked[:num]
     _write_cache(query, truncated)
     return truncated
