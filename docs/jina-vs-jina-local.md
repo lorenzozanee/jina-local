@@ -26,9 +26,9 @@
 | 已有 benchmark 声称 | 当前仓库曾在特定机器、样本和账户状态下测到的数字 | 公平的官方质量排名、泛化到生产流量 |
 | 需实测/不可公平比较 | 需要同一数据、版本、时间窗口、网络条件后得到的结论 | 在条件不齐时给出确定结论 |
 
-仓库自己的报告使用 `scripts/bench_full.py` 汇总 7 份 bench，报告称 22 工具、5 维度 PASS，本地 9.74/10、官方侧 3.6/10，成功率本地 134/134 对 20/127，见 `docs/bench-full.md:3-16`。但该报告同时记录 Search、Deep、Reranker、Embeddings 多数远端请求因 402 不可用（`docs/bench-full.md:20-28`），其分数把“服务暂时不可调用”当成质量和成功率差异。这个结果可以回答“该账户/该时段本地更可用”，不能回答“本地相关性超过官方”。
+旧报告中的 PASS、成功率、余额错误和合成样本不作为当前搜索质量证据。当前搜索质量由 `scripts/bench_search_live.py` 的版本化三轮语料评估提供：结果必须带完整 provenance，并计算 MRR、nDCG@5 和 source coverage；未开启 live opt-in 或后端不可用时不产生候选。Jina、Firecrawl、Exa 质量比较在没有可比账户和实验条件时保持未测。
 
-Reader bench 的 5 个 URL、每个 5 次运行、冷/热缓存和 p50/p95 逻辑见 `scripts/bench_reader.py:21-35`、`:132-188`；它测了 Markdown 字符数、标题、列表、代码和表格等结构代理指标（`:37-57`），不是人工或标注数据集上的语义质量。Search bench 的相关性是标题/正文关键词命中和 top1 命中（`scripts/bench_search.py:50-75`），也不是 Recall@k、MRR 或 nDCG。Embeddings bench 只有 6 组三元组（`scripts/bench_embeddings.py:32-43`），主要比较正负相似度差；Reranker bench 是 4 组人工构造文档并计算 nDCG（`scripts/bench_reranker.py:33-83`、`:99-120`）。
+Reader bench 的 5 个 URL、每个 5 次运行、冷/热缓存和 p50/p95 逻辑见 `scripts/bench_reader.py:21-35`、`:132-188`；它测了 Markdown 字符数、标题、列表、代码和表格等结构代理指标（`:37-57`），不是人工或标注数据集上的语义质量。旧 Search bench 的关键词命中和 top1 仅是结构回归代理；在线质量使用 `scripts/bench_search_live.py`，以 canonical URL 标签计算 MRR、nDCG@5、provenance 和 source coverage。Embeddings bench 只有 6 组三元组（`scripts/bench_embeddings.py:32-43`），主要比较正负相似度差；Reranker bench 是 4 组人工构造文档并计算 nDCG（`scripts/bench_reranker.py:33-83`、`:99-120`）。
 
 因此，stub/hash/词法代理、固定分数、少量人工样本和多数 PASS 都不能证明与官方服务等价。`tests/` 的主要价值是契约、输入校验、fallback、缓存、部署和可调用性；例如 `tests/test_mcp_compatibility.py:11-59` 定义了 22 个工具及必填参数，不能当作搜索质量测试。
 
@@ -93,12 +93,15 @@ Reader bench 的 5 个 URL、每个 5 次运行、冷/热缓存和 p50/p95 逻�
 3. **L3 系统级**：固定依赖和配置，测端到端 MCP 调用、并发、超时、重试、日志、断网和恢复；运行 `python -m pytest tests/ -q`，再核对失败样本而非只看 PASS。
 4. **L4 硬件级**：在目标机器记录 `nvidia-smi`、CPU/RAM 峰值、容器资源、磁盘和模型加载时间，分 GPU 模型、CPU 模型、hash/cosine fallback 三种 backend 测；执行 `python scripts/bench_embeddings.py`、`python scripts/bench_reranker.py` 和 `python scripts/bench_full.py`。官方硬件不可见，故 L4 只能分别报告，不能做同硬件比值。
 
+搜索 live 复测要求 Linux host-network 部署：`search` 和 `search-fetcher` 通过主机 loopback 访问代理；在 `.env` 设置 `JINA_LOCAL_SEARCH_PROXY_URL`，必要时设置 HTTP(S)/SOCKS 代理，再执行 `curl --fail http://127.0.0.1:8082/readyz`。LLM 增强仅在 `JINA_LOCAL_LLM_BASE_URL`、`JINA_LOCAL_LLM_MODEL`、`JINA_LOCAL_LLM_API_KEY` 全部存在时比较。
+
 最小可执行本地复测命令：
 
 ```bash
 python -m pytest tests/ -q
 python scripts/bench_reader.py
-python scripts/bench_search.py
+python scripts/bench_search.py  # 结构回归，不是质量结论
+JINA_LOCAL_LIVE_SEARCH=1 python scripts/bench_search_live.py
 python scripts/bench_search_deep.py
 python scripts/bench_embeddings.py
 python scripts/bench_reranker.py
@@ -122,7 +125,8 @@ python scripts/bench_full.py
 - `mcp-gateway/src/server.py:109-220`：FastMCP、传输和工具注册。
 - `mcp-gateway/src/gateway.py:9-146`、`:149-240`：模块委托、别名和本地入口。
 - `mcp-gateway/src/reader.py:60-82`、`:123-231`、`:234-240`：抓取、Markdown 和抽取。
-- `mcp-gateway/src/search.py:1`、`:108-187`：搜索聚合、词法排序和缓存。
+- `mcp-gateway/src/search.py:1`、`:108-187`：搜索聚合、provenance、词法排序和缓存。
+- `scripts/bench_search_live.py`：显式 opt-in 的三轮真实搜索评估与脱敏证据归档。
 - `mcp-gateway/src/search_deep.py:1-3`、`:121-142`、`:205-229`：Deep 编排和 fallback。
 - `mcp-gateway/src/search_academic.py:1-9`、`:73-143`：学术、图片和截图工具。
 - `mcp-gateway/src/embeddings.py:1-5`、`:26-42`、`:203-220`：模型、fallback、懒加载和分批。

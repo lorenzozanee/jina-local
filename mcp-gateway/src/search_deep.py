@@ -10,6 +10,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Callable, Any
 
+try:
+    from . import search_llm
+except ImportError:
+    import importlib.util
+    _llm_path = pathlib.Path(__file__).with_name("search_llm.py")
+    _llm_spec = importlib.util.spec_from_file_location("search_llm", _llm_path)
+    search_llm = importlib.util.module_from_spec(_llm_spec)
+    _llm_spec.loader.exec_module(search_llm)
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = pathlib.Path("/tmp/opencode/jina-local")
@@ -167,6 +176,88 @@ def _word_overlap_score(query: str, doc: str) -> float:
     return overlap / len(q) if q else 0.0
 
 
+def _canonical_url(url: str) -> str:
+    try:
+        from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+        parsed = urlparse(url.strip())
+        scheme = (parsed.scheme or "https").lower()
+        netloc = parsed.netloc.lower()
+        if netloc.endswith(":80") and scheme == "http":
+            netloc = netloc[:-3]
+        if netloc.endswith(":443") and scheme == "https":
+            netloc = netloc[:-4]
+        path = parsed.path or "/"
+        if len(path) > 1:
+            path = path.rstrip("/")
+        query = urlencode(sorted((key, value) for key, value in parse_qsl(parsed.query) if not key.lower().startswith("utm_")))
+        return urlunparse((scheme, netloc, path, "", query, ""))
+    except Exception:
+        return url.strip().rstrip("/").lower()
+
+
+def _fuse_search_results(query: str, planned_queries: list[str], num: int, search_callable: Callable) -> list[dict]:
+    fused: dict[str, dict] = {}
+    queries = [query, *planned_queries]
+    for search_query in queries:
+        try:
+            import inspect
+            sig = inspect.signature(search_callable)
+            if "num" in sig.parameters:
+                found = search_callable(search_query, num=num)
+            elif "limit" in sig.parameters:
+                found = search_callable(search_query, limit=num)
+            elif "top_k" in sig.parameters:
+                found = search_callable(search_query, top_k=num)
+            else:
+                try:
+                    found = search_callable(search_query, num)
+                except TypeError:
+                    found = search_callable(search_query)
+        except Exception:
+            if search_query == query:
+                raise
+            continue
+        if not isinstance(found, list):
+            if search_query == query:
+                raise TypeError("original search response must be a list")
+            continue
+        for rank, item in enumerate(found[:num], 1):
+            if not isinstance(item, dict):
+                continue
+            required_fields = ("title", "url", "content", "source", "retrieved_at")
+            if any(
+                not isinstance(item.get(field), str) or not item[field].strip()
+                for field in required_fields
+            ):
+                continue
+            title = item["title"]
+            url = item["url"]
+            content = item["content"]
+            key = _canonical_url(url)
+            if key not in fused:
+                fused[key] = dict(item)
+                fused[key]["content_snippet"] = content
+                fused[key]["_fusion_score"] = 0.0
+            fused[key]["_fusion_score"] += 1.0 / (60 + rank)
+    return sorted(fused.values(), key=lambda item: -item["_fusion_score"])[:num]
+
+
+def _apply_llm_rerank(results: list[dict], query: str) -> list[dict]:
+    candidates = []
+    for index, item in enumerate(results):
+        candidate = dict(item)
+        candidate["id"] = str(index)
+        candidates.append(candidate)
+    try:
+        ordered_ids = search_llm.rerank_ids(query, candidates)
+        expected = {candidate["id"] for candidate in candidates}
+        if isinstance(ordered_ids, list) and len(ordered_ids) == len(candidates) and set(ordered_ids) == expected and len(set(ordered_ids)) == len(ordered_ids):
+            by_id = {candidate["id"]: item for candidate, item in zip(candidates, results)}
+            return [by_id[item_id] for item_id in ordered_ids]
+    except Exception:
+        pass
+    return results
+
 def _get_search_fn(explicit: Callable | None):
     if explicit is not None:
         return explicit
@@ -314,54 +405,29 @@ def search_web_deep(
     num = _validate_num(num)
     chunk_size = _validate_chunk_size(chunk_size)
 
-    # cache hit
-    cached = _read_cache(query, num, chunk_size)
-    if cached is not None:
-        return cached
+    llm_enabled = search_llm.is_enabled()
+    if not llm_enabled:
+        cached = _read_cache(query, num, chunk_size)
+        if cached is not None:
+            return cached
 
     search_callable = _get_search_fn(search_fn)
     reader_callable = _get_reader_fn(reader_fn)
     reranker_callable = _get_reranker_fn(reranker_fn)
 
-    # 1. search
-    try:
-        # try with num param
-        import inspect
-        sig = inspect.signature(search_callable)
-        if "num" in sig.parameters:
-            search_results = search_callable(query, num=num)
-        elif "limit" in sig.parameters:
-            search_results = search_callable(query, limit=num)
-        elif "top_k" in sig.parameters:
-            search_results = search_callable(query, top_k=num)
-        else:
-            # try positional
-            try:
-                search_results = search_callable(query, num)
-            except TypeError:
-                search_results = search_callable(query)
-    except TypeError:
-        # fallback try without num
-        search_results = search_callable(query)
 
-    if not isinstance(search_results, list):
-        raise TypeError("search_web 应返回 list[dict]")
-    # truncate/validate
-    search_results = search_results[:num]
-    # filter valid items
-    valid_results: list[dict] = []
-    for r in search_results:
-        if not isinstance(r, dict):
-            continue
-        title = r.get("title", "") or ""
-        url = r.get("url", "") or ""
-        content_snippet = r.get("content", "") or ""
-        if not url or not title:
-            continue
-        valid_results.append({"title": title, "url": url, "content_snippet": content_snippet})
+    try:
+        planned_queries = search_llm.plan_queries(query)
+    except Exception:
+        planned_queries = []
+    if not isinstance(planned_queries, list):
+        planned_queries = []
+    planned_queries = [item.strip() for item in planned_queries if isinstance(item, str) and item.strip() and item.strip() != query]
+    valid_results = _fuse_search_results(query, planned_queries, num, search_callable)
     if not valid_results:
-        # if search returned empty, return empty list (no cache)
         return []
+    for item in valid_results:
+        item.pop("_fusion_score", None)
 
     valid_results = _enrich_with_qdrant(valid_results, query, num)
     valid_results = [r for r in valid_results if isinstance(r, dict) and r.get("title") and r.get("url")]
@@ -532,7 +598,8 @@ def search_web_deep(
         # Keep content as full_content for completeness (limit to 8000)
         content_out = full_content[:10000] if isinstance(full_content, str) else str(full_content)
 
-        results.append({
+        output = dict(meta)
+        output.update({
             "title": title,
             "url": url,
             "content": content_out,
@@ -540,9 +607,12 @@ def search_web_deep(
             "score": float(score),
             "snippet_source": snippet_source,
         })
+        output.pop("content_snippet", None)
+        results.append(output)
 
-    # cache write
-    _write_cache(query, num, chunk_size, results)
+    results = _apply_llm_rerank(results, query)
+    if not llm_enabled:
+        _write_cache(query, num, chunk_size, results)
     return results
 
 

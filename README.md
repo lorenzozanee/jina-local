@@ -2,9 +2,9 @@
 
 ![jina-local](docs/jina-local.svg)
 
-> 系统全局本地化替代 `jina.ai` 的 Reader / Search / Reranker / Embeddings 能力，供所有 OpenCode Agent 通过 MCP (Model Context Protocol) 统一调用 — 零余额依赖、离线可用、成本为 0。
+> 系统全局本地化替代 `jina.ai` 的 Reader / Search / Reranker / Embeddings 能力，供所有 OpenCode Agent 通过 MCP (Model Context Protocol) 统一调用。搜索质量需要在明确开启联网后用版本化语料独立复测。
 
-[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue)](.github/workflows/ci.yml) [![22 Tools](https://img.shields.io/badge/Tools-22%20PASS-brightgreen)](#替代对照表22-工具)](docs/bench-full.md) [![5 Dimensions PASS](https://img.shields.io/badge/Dimensions-5%2F5%20PASS-brightgreen)](#性能对比5-维度雷达--125-测试)](docs/bench-full.md) [![GPU RTX 5070](https://img.shields.io/badge/GPU-RTX%205070%2012GB%20Blackwell-blue)](#显存预算rtx-5070-12gb-docsgpu-optimizationmd) [![Offline](https://img.shields.io/badge/Offline-%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-success)](#性能对比5-维度雷达--125-测试) [![Tests 125 passed](https://img.shields.io/badge/tests-125%20passed-brightgreen)](#开发指南) [![License MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE) [![Security Policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue)](.github/workflows/ci.yml) [![GPU RTX 5070](https://img.shields.io/badge/GPU-RTX%205070%2012GB%20Blackwell-blue)](#显存预算rtx-5070-12gb-docsgpu-optimizationmd) [![License MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE) [![Security Policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 
 ---
 
@@ -30,11 +30,11 @@
 
 | 痛点 (Pain) | jina.ai 云端现状 | jina-local 本地解法 |
 |---|---|---|
-| **余额不足即不可用** | `402 Payment Required` — 实测 Search / Reranker / Embeddings / Deep 全部 402，成功率仅 16%（20/127），`docs/bench-full.md` 可复现 | 本地 100% 成功率（134/134），无 API Key、无计量、无限流 |
+| **云端账户与网络边界** | 官方服务的当前可用性、质量和费用取决于账户、网络、模型和服务状态，不能用 402 推导质量结论 | 本地部署可控制模型、出口、缓存和服务边界；在线搜索仍需显式配置 egress |
 | **强依赖云端网络** | 需联网 + Key，离线/弱网/内网环境完全不可用，离线维度 1.0/10 | 离线可用 10.0/10，`/tmp/opencode/jina-local` 持久缓存 + `hf-cache` 本地模型，断网可跑 |
 | **按量计费成本高** | Embeddings ~$0.02/1M tokens、Reader ~$0.30/1M、Search/Rerank $0.01–0.03/请求，量大即烧余额 | 成本 10.0/10，本地 0 成本，RTX 5070 一次性硬件投入 |
 | **延迟与限流不可控** | 冷启动 0.9–1.6s 且受远端限流/排队影响，`httpbin.org/html` 实测匿名被封 403 | 冷启动 0.7–1.5s 相当，**缓存命中 0s** 远优，`max-concurrent-requests 64` + `shm_size 1g` 支撑 >100 QPS |
-| **覆盖不全** | Utility 类 7 工具（deduplicate/classify/expand/extract_pdf 等）无对应 jina 端点或同样 402 | 22 工具全覆盖（含 embeddings 与并行/离线扩展），5 维度全部 PASS |
+| **覆盖不全** | Utility 类 7 工具（deduplicate/classify/expand/extract_pdf 等）无对应 jina 端点或需单独验证 | 22 个 Jina 风格工具接口，在线搜索质量另行评估 |
 
 > 一句话：把 `jina.ai` 的 20+ 云端能力搬到宿主机 GPU 上，OpenCode 侧仅切换 MCP endpoint 即可无感迁移。
 
@@ -78,7 +78,7 @@ CACHE_DIR=/tmp/opencode/jina-local
 
 默认不让 Docker 自动重启任何服务，避免 TEI 模型和 Qdrant 常驻占用内存。Agent 开始对应 Web 任务时启动所需服务，任务结束后立即停止。
 
-搜索链路由三个本地服务组成：Go `search-fetcher` 只从 SearXNG 读取候选并报告来源状态，Rust `search-core` 负责 URL 规范化、`site:` 过滤、去重和排序，Python MCP 网关保存带 TTL 的 provenance cache。搜索后端不可用时工具返回 `NO_RETRIEVAL_BACKEND`，不会生成看似合理的网页、URL 或摘要。
+搜索链路由三个本地服务组成：Go `search-fetcher` 只从 SearXNG 读取候选并报告来源状态，Rust `search-core` 负责 URL 规范化、`site:` 过滤、去重和排序，Python MCP 网关保存带 TTL 的 provenance cache。Linux 部署使用 host network，让 SearXNG 通过 `JINA_LOCAL_SEARCH_PROXY_URL` 访问主机代理；搜索后端不可用时工具返回 `NO_RETRIEVAL_BACKEND`，不会生成网页、URL 或摘要。
 
 ```bash
 # Embeddings/Reranker/向量检索任务
@@ -362,7 +362,7 @@ flowchart TB
 | 2 | Reader — URL → Markdown | `jina_read_url` / `read_url` / `omnireach_omnireach_fetch` / `firecrawl_scrape` | `read_url(url, question?, chunk_size?, top_k?)` | `reader.py` | trafilatura + readability-lxml + bs4 双抽取选最长，question 100词窗口 rerank，sha256 缓存 |
 | 3 | Screenshot — 网页截图 | `jina_capture_screenshot_url` | `capture_screenshot_url(url)` | `search_academic.py` | playwright 可用时真截图，否则 base64 stub |
 | 4 | Guess Datetime — 推断发布时间 | `jina_guess_datetime_url` | `guess_datetime_url(url)` | `utils.py` | HTTP header + meta + Schema.org + 可见日期 |
-| 5 | Search Web — 联网搜索片段 | `jina_search_web` / `search_web` | `search_web(query, num?)` | `search.py` | SearXNG 优先 → DuckDuckGo/Bing/Brave fallback → 语义 stub，去重/归一 |
+| 5 | Search Web — 联网搜索片段 | `jina_search_web` / `search_web` | `search_web(query, num?)` | `search.py` | SearXNG provenance pipeline，去重/归一；不可用时 `NO_RETRIEVAL_BACKEND` |
 | 6 | Search Deep — 搜索并全文读取 | `jina_search_web_deep` / `search_web_deep` | `search_web_deep(query, num?, chunk_size?)` | `search_deep.py` | Search + 并行 Reader + 相关段落抽取 |
 | 7 | Search arXiv — 论文检索 | `jina_search_arxiv` | `search_arxiv(query, num?)` | `search_academic.py` | arXiv API `export.arxiv.org/api/query` |
 | 8 | Search SSRN — 社科论文 | `jina_search_ssrn` | `search_ssrn(query, num?)` | `search_academic.py` | Semantic Scholar `api.semanticscholar.org` |
@@ -391,31 +391,15 @@ flowchart TB
 
 ### 总体判定
 
-**PASS: 可替代且性能 ≥ jina — 22 工具全兼容、5 维度本地 ≥ jina、成本 0、离线可用**
+接口和确定性契约测试不等于在线搜索质量。历史 bench 中的合成样本、fallback 路径、余额错误和 PASS 汇总均不作为当前质量结论。
 
-| 指标 | 本地 | jina.ai | 结论 |
-|---|---|---|---|
-| 工具通过 | **22/22** | — | 全兼容 |
-| 维度通过 | **5/5** | — | 全部 PASS |
-| 平均分 | **9.74/10** | 3.6/10 | 本地外扩 |
-| 汇总成功率 | **134/134 (100%)** | 20/127 (16%) | jina 多数 402 |
+真实搜索质量请运行版本化语料的三轮 live benchmark；它只在 `JINA_LOCAL_LIVE_SEARCH=1` 时联网，并归档 provenance、延迟、MRR、nDCG@5 和 source coverage。Jina/Firecrawl/Exa 的质量比较在没有可比账户、输入、模型、时间窗口和网络条件时保持未测。
 
 ### 5 维度雷达
 
-| 维度 (Dimension) | 本地 (0–10) | jina (0–10) | 判定 | 说明 |
-|---|---|---|---|---|
-| **延迟 (Latency)** | 9.2 | 7.0 | PASS | 冷启动 0.7–1.5s 与 jina 0.9–1.6s 相当（ratio 1.0–1.4 <2×），**缓存命中 0s** 远优；p50 缓存 <1ms |
-| **相关性 (Relevance)** | 9.5 | 3.5 | PASS | search hit 100%、reranker top1 100% (4/4)、deep best_passage 100%、embeddings diff 0.616；jina 多数 0%（402 不可用） |
-| **成功率 (Success Rate)** | 10.0 | 4.0 | PASS | 本地 100%（reader 25/25、search 25/25、deep 15/15、reranker 20/20、embeddings 30/30、utils 19/19） |
-| **成本 (Cost)** | 10.0 | 2.5 | PASS | 本地 0 成本离线无计费；jina 按 token/请求计费（当前 402 余额不足完全不可用） |
-| **离线可用性 (Offline)** | 10.0 | 1.0 | PASS | 本地无 API key/无网络依赖；jina 需联网+key，402 时全不可用 |
+历史雷达分数、402 账户错误、合成样本和 fallback 结果不作为当前搜索质量结论。确定性测试只覆盖契约和可调用性；真实搜索质量需运行 `JINA_LOCAL_LIVE_SEARCH=1 python scripts/bench_search_live.py`，使用版本化语料三轮计算 provenance、MRR、nDCG@5 和 source coverage。
 
-```
-雷达顶点（顺序：延迟 → 相关性 → 成功率 → 成本 → 离线）：
-  本地: [9.2, 9.5, 10.0, 10.0, 10.0]  五边形外扩饱满（9–10 分）
-  jina: [7.0, 3.5,  4.0,  2.5,  1.0]  内缩（1–7 分）
-  面积比：本地约为 jina 的 2.7 倍
-```
+真实评估要求 Linux host-network 搜索部署，并在 `.env` 配置 `JINA_LOCAL_SEARCH_PROXY_URL`。LLM baseline/enhancement 只有在 `JINA_LOCAL_LLM_BASE_URL`、`JINA_LOCAL_LLM_MODEL`、`JINA_LOCAL_LLM_API_KEY` 全部存在时才比较。Jina/Firecrawl/Exa 质量比较在没有可比账户和条件时保持未测。
 
 ### 22 工具明细（摘自 bench-full）
 
@@ -447,7 +431,7 @@ flowchart TB
 
 ```bash
 python -m pytest tests/ -q
-# 125 passed, 4 skipped in ~4s
+# CI runs the selected deterministic contract suite; see .github/workflows/ci.yml
 ```
 
 | 测试文件 | 覆盖 |
@@ -526,7 +510,7 @@ cat /tmp/jina-local-bench-space.json | python -m json.tool
 │       ├── server.py                  # FastMCP stdio 入口，暴露 22 个规范工具
 │       ├── gateway.py                 # 统一网关：委托各模块，兼容 jina 签名与别名（jina_*/deduplicate/classify/search_deep）
 │       ├── reader.py                  # 生产级 Reader：双抽取+question+并发+sha256缓存
-│       ├── search.py                  # Search 聚合：SearXNG→DuckDuckGo/Bing/Brave→stub，去重/缓存在
+│       ├── search.py                  # Search 聚合：SearXNG provenance pipeline，去重/缓存在
 │       ├── search_deep.py             # Search Deep 编排：Search + 并行 Reader + rerank
 │       ├── embeddings.py              # Embeddings：bge-m3 / TEI / SentenceTransformer / hash fallback，懒加载+闲置释放
 │       ├── reranker.py                # Reranker：bge-reranker-v2-m3 / CrossEncoder / cosine fallback，懒加载+批处理
@@ -600,12 +584,15 @@ JINA_LOCAL_EMBEDDINGS_DEVICE=cuda:0 python -m pytest tests/test_embeddings.py -v
 
 ### 评测脚本 bench_* 用法
 
-所有 bench 输出到 `/tmp/jina-local-bench-*.json`，`bench_full.py` 汇总为总评。
+`bench_search.py` 等旧脚本是结构和回归工具，不代表当前在线搜索质量；真实搜索须使用下方显式 opt-in 的 live benchmark。
+
+确定性 bench 输出到 `/tmp/jina-local-bench-*.json`，`bench_full.py` 汇总契约与历史运行记录；这些记录不证明当前在线搜索质量。
 
 ```bash
 # 单项 bench（5 维度：延迟/相关性/成功率/成本/离线）
 python scripts/bench_reader.py        # → /tmp/jina-local-bench-reader.json + docs/bench-reader.md 判定
-python scripts/bench_search.py        # → /tmp/jina-local-bench-search.json
+python scripts/bench_search.py        # 结构/回归 bench，不是在线质量证明
+JINA_LOCAL_LIVE_SEARCH=1 python scripts/bench_search_live.py  # 三轮真实语料评估 → /tmp/opencode/jina-local/search-live-<timestamp>.json
 python scripts/bench_search_deep.py   # → /tmp/jina-local-bench-search-deep.json
 python scripts/bench_reranker.py      # → /tmp/jina-local-bench-reranker.json
 python scripts/bench_embeddings.py    # → /tmp/jina-local-bench-embeddings.json
@@ -644,16 +631,16 @@ nvidia-smi
 A: 可以。`torch.cuda.is_available()` 自动检测，无 GPU 时 `embeddings.py`/`reranker.py` 回退为 hash TF + L2 归一 / 余弦重排，`/tmp/opencode` 缓存仍可用，`pytest` 125 passed 与 bench 仍 PASS（相关性略降但成功率/成本/离线满分）。`JINA_LOCAL_USE_GPU=0` 可强制 CPU 调试。
 
 **Q: 模型首次下载很慢/离线如何？**  
-A: `docker-compose.yml` 中 `HF_HUB_OFFLINE=0` 允许 TEI 拉模型到共享 `hf-cache:/data`（约 2–3G）；下载后 `HF_HUB_OFFLINE=1` 可离线启动。模型未下载时本地 Python 端仍可用 fallback，不阻塞测试。
+A: `docker-compose.yml` 中 `HF_HUB_OFFLINE=0` 允许 TEI 拉模型到共享 `hf-cache:/data`；下载后 `HF_HUB_OFFLINE=1` 可离线启动。在线 Search 仍需按需启动 host-network 服务并显式配置 egress。
 
-**Q: `jina.ai` 返回 402 怎么办？**  
-A: 正是本项目要解决的。本地 100% 成功率（bench-full 16% vs 100%），无需余额。
+**Q: 如何运行真实搜索质量评估？**
+A: Linux host-network 搜索服务需先配置 `.env` 中的 `JINA_LOCAL_SEARCH_PROXY_URL`，再运行 `JINA_LOCAL_LIVE_SEARCH=1 python scripts/bench_search_live.py`。缺少显式 opt-in 时脚本不会发起网络请求；LLM 只有在三个 `JINA_LOCAL_LLM_*` 变量齐全时才比较增强结果。
 
 **Q: 缓存会爆盘吗？**  
 A: 不会。`/tmp/opencode/jina-local` 按 `scripts/clean_cache.py` 策略清理：超 7 天或总量 >10G 按 mtime 删最旧，保留最近 100 + `gpu-stats.json`。实测当前仅 1.3M。
 
 **Q: 如何只启动部分服务？**  
-A: `docker compose up -d` 默认仅 embeddings/reranker/qdrant；`--profile full` 全量，`--profile reader` 仅 reader，`--profile search` 仅 search。见 [docs/images.md#按需启动示例](docs/images.md#按需启动示例)。
+A: `docker compose up -d` 默认仅 embeddings/reranker/qdrant；`--profile full` 全量，`--profile reader` 仅 reader，`--profile search` 启动 host-network Search。Search 需要 `.env` 的 `JINA_LOCAL_SEARCH_PROXY_URL`，见 [docs/images.md#按需启动示例](docs/images.md#按需启动示例)。
 
 **Q: 如何验证 22 工具全兼容？**
 A: `python -m pytest tests/test_mcp_compatibility.py tests/test_mcp_global.py -v` 与 `python scripts/bench_mcp_global.py`，两者均校验 22 工具暴露与 5 维度。
