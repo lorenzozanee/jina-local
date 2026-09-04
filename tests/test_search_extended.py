@@ -10,7 +10,6 @@ TDD 红阶段：这些测试在 stub 实现下应 FAIL
 import importlib.util
 import pathlib
 import sys
-import hashlib
 import json
 
 import pytest
@@ -40,6 +39,22 @@ def _load():
     return mod, path
 
 
+def _load_isolated(monkeypatch, tmp_path):
+    mod, _ = _load()
+    monkeypatch.setattr(mod, "CACHE_DIR", tmp_path)
+    return mod
+
+
+def _candidate(query: str, index: int = 1, host: str = "example.com") -> dict:
+    return {
+        "title": f"{query} result {index}",
+        "url": f"https://{host}/docs/{index}",
+        "content": f"Retrieved documentation about {query}.",
+        "source": "searxng",
+        "retrieved_at": "2026-09-04T00:00:00Z",
+    }
+
+
 def _get_search():
     mod, _ = _load()
     for name in ("search_web", "search"):
@@ -56,9 +71,11 @@ def _get_parallel():
     return None, mod
 
 
-def test_search_returns_real_results():
-    """对 query='retrieval augmented generation' 返回 list 且每项含 title/url/content 且内容相关"""
-    search_fn, _ = _get_search()
+def test_search_returns_only_provenanced_retrieved_results(monkeypatch, tmp_path):
+    """search_web 只能返回有来源和检索时间的真实候选。"""
+    mod = _load_isolated(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "_fetch_candidates", lambda query, num: [_candidate(query, i) for i in range(1, num + 1)], raising=False)
+    search_fn = mod.search_web
     results = search_fn(query="retrieval augmented generation")
     assert isinstance(results, list), "search_web 应返回 list"
     assert len(results) >= 3, f"至少返回 3 条，实际 {len(results)}"
@@ -67,6 +84,8 @@ def test_search_returns_real_results():
         for field in ("title", "url", "content"):
             assert field in item, f"缺少字段 {field}, 实际 {list(item.keys())}"
             assert isinstance(item[field], str) and len(item[field].strip()) > 0, f"字段 {field} 应为非空 str"
+        assert item["source"] == "searxng"
+        assert item["retrieved_at"] == "2026-09-04T00:00:00Z"
     # 内容相关：至少 50% 的结果 title/content 含 query 关键词任一
     q_words = ["retrieval", "augmented", "generation"]
     hits = 0
@@ -77,9 +96,11 @@ def test_search_returns_real_results():
     assert hits >= len(results) * 0.5, f"相关性不足：仅 {hits}/{len(results)} 命中 query 关键词"
 
 
-def test_search_parallel():
+def test_search_parallel(monkeypatch, tmp_path):
     """并发 3 query"""
-    fn, mod = _get_parallel()
+    mod = _load_isolated(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "_fetch_candidates", lambda query, num: [_candidate(query, 1)], raising=False)
+    fn = mod.parallel_search_web
     assert fn is not None, f"功能缺失: 未暴露 parallel_search_web，检查 {CANDIDATES}"
     import inspect
     sig = inspect.signature(fn)
@@ -96,6 +117,7 @@ def test_search_parallel():
             assert isinstance(item, dict)
             for field in ("title", "url", "content"):
                 assert field in item
+            assert item["source"] == "searxng"
 
 
 def test_search_error_empty_query():
@@ -149,9 +171,11 @@ def test_search_dedup():
     assert len(normalized) == len(set(normalized)), f"返回结果存在重复 url（归一化后）：{normalized}"
 
 
-def test_search_result_length():
-    """至少返回 5 条，若 SearXNG 未启动则走 fallback 仍需 3+ 条"""
-    search_fn, _ = _get_search()
+def test_search_result_length_and_cache_envelope(monkeypatch, tmp_path):
+    """成功结果精确截断，并以带过期时间的 provenance cache 保存。"""
+    mod = _load_isolated(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "_fetch_candidates", lambda query, num: [_candidate(query, i) for i in range(1, 8)], raising=False)
+    search_fn = mod.search_web
     import inspect
     sig = inspect.signature(search_fn)
     # 支持 num 参数
@@ -159,23 +183,49 @@ def test_search_result_length():
     param_name = "num" if "num" in sig.parameters else ("top_k" if "top_k" in sig.parameters else "limit")
     results = search_fn(query="retrieval augmented generation", **{param_name: 5})
     assert isinstance(results, list)
-    # 理想 5 条，fallback 至少 3 条
-    assert len(results) >= 3, f"fallback 至少 3 条，实际 {len(results)}"
-    # 若请求 5，尽量返回 5（SearXNG 可达时）
-    # 当 SearXNG 不可用，本地 fallback 也应返回 5（stub）
-    assert len(results) >= 5 or len(results) >= 3, f"长度不足 {len(results)}"
+    assert len(results) == 5, f"num=5 应精确返回 5 条，实际 {len(results)}"
     # 验证 top_k 截断
     results3 = search_fn(query="retrieval augmented generation", **{param_name: 3})
     assert len(results3) == 3, f"top_k=3 应精确返回 3 条，实际 {len(results3)}"
 
-    # 缓存文件应生成
     q = "retrieval augmented generation"
-    key = hashlib.sha256(q.encode()).hexdigest()
-    cache_file = pathlib.Path("/tmp/opencode/jina-local") / f"search-{key}.json"
-    # 若实现含缓存，则文件应在调用后存在
-    if cache_file.exists():
-        data = json.loads(cache_file.read_text(encoding="utf-8"))
-        assert isinstance(data, list) and len(data) >= 3
+    cache_file = mod._cache_path(q)
+    data = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert data["schema_version"] == 2
+    assert data["query"] == q
+    assert data["expires_at"] > data["created_at"]
+    assert data["results"] == results
+
+
+def test_search_rejects_synthetic_legacy_cache_and_surfaces_unavailability(monkeypatch, tmp_path):
+    """旧 list cache 的伪造内容不可返回，且无后端时必须明确报错。"""
+    mod = _load_isolated(monkeypatch, tmp_path)
+    query = "OpenCode official documentation"
+    cache_file = mod._cache_path(query)
+    cache_file.write_text(json.dumps([{
+        "title": query,
+        "url": "https://jina.ai/topics/opencode/123",
+        "content": f"This result discusses {query} in depth.",
+    }]), encoding="utf-8")
+    monkeypatch.setattr(mod, "_fetch_candidates", lambda query, num: [], raising=False)
+    with pytest.raises(mod.SearchUnavailableError, match="NO_RETRIEVAL_BACKEND"):
+        mod.search_web(query)
+    assert not cache_file.exists()
+
+
+def test_search_enforces_site_operator(monkeypatch, tmp_path):
+    """site: 查询只能返回目标域名及其子域名。"""
+    mod = _load_isolated(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "_fetch_candidates", lambda query, num: [
+        _candidate(query, 1, "opencode.ai"),
+        _candidate(query, 2, "docs.opencode.ai"),
+        _candidate(query, 3, "example.com"),
+    ], raising=False)
+    results = mod.search_web("site:opencode.ai documentation", num=5)
+    assert [item["url"] for item in results] == [
+        "https://opencode.ai/docs/1",
+        "https://docs.opencode.ai/docs/2",
+    ]
 
 
 def test_searxng_json_request_supplies_client_ip_headers(monkeypatch):

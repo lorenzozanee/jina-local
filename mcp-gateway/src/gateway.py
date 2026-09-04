@@ -23,13 +23,18 @@ except ImportError:
 try:
     from .search import search_web as _search_search_web
     from .search import parallel_search_web as _search_parallel
+    from .search import SearchUnavailableError
 except ImportError:
     try:
         from search import search_web as _search_search_web  # type: ignore
         from search import parallel_search_web as _search_parallel  # type: ignore
+        from search import SearchUnavailableError  # type: ignore
     except ImportError:
         _search_search_web = None  # type: ignore
         _search_parallel = None  # type: ignore
+
+        class SearchUnavailableError(RuntimeError):
+            code = "NO_RETRIEVAL_BACKEND"
 
 try:
     from .embeddings import embed as _emb_embed
@@ -210,21 +215,7 @@ def search_web(query: str, num: int = 5, **kwargs) -> list[dict]:
             pass
     if _search_search_web is not None:
         return _search_search_web(query, num=num)
-    # fallback minimal (should not happen after search.py exists)
-    if not isinstance(query, str) or not query.strip():
-        raise ValueError("query 必须为非空字符串")
-    return [
-        {
-            "title": f"mock result for {query}",
-            "url": "https://example.com",
-            "content": f"mock content related to {query}. This is a stub search result.",
-        },
-        {
-            "title": f"second result for {query}",
-            "url": "https://example.org",
-            "content": f"additional mock content for {query}",
-        },
-    ]
+    raise SearchUnavailableError("NO_RETRIEVAL_BACKEND: search module unavailable")
 
 
 def parallel_search_web(queries: list[str], num: int = 5) -> list[list[dict]]:
