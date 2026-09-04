@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -26,7 +25,7 @@ func main() {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		result := service.Fetch(context.Background(), input.Query, input.Limit)
+		result := service.Fetch(r.Context(), input.Query, input.Limit)
 		if result.Code != "" {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}

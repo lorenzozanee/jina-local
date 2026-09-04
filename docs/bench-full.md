@@ -6,21 +6,25 @@
 
 ## 总体判定
 
-**PASS: 可替代且性能≥jina — 22 工具全兼容、5 维度本地≥jina、成本0、离线可用**
+**部分结果需重测：Search 已改为只接受可证明来源的结果，旧成功率不能继续作为当前结论。**
 
 - 总工具: **22**（对应 jina 20+ 工具全兼容，含 7 utils + reader/search/deep/reranker/embeddings/search_academic 等）
 - 通过工具: **22/22**
 - 维度通过: **5/5**
 - 平均分: **本地 9.74/10 vs jina 3.6/10**
-- 汇总成功率: **本地 129/134 (96%) vs jina 0/127 (0%)**
-- 结论: **PASS: 可替代且性能≥jina — 22 工具全兼容、5 维度本地≥jina、成本0、离线可用** — 若 5 维度全部 PASS 则标注“可替代且性能≥jina”，否则在对应模块加 `TODO(bench-full)` 并记录优化项.
+- 汇总成功率: **需要在新的 provenance 搜索链路上重新采样。**
+- 结论: Search 后端不可用时会返回 `NO_RETRIEVAL_BACKEND`，而不是制造结果；其它工具的历史 benchmark 结论不受此条替代。
+
+## 搜索真实性门禁
+
+`scripts/bench_search_integrity.py` 只接受含 `title`、`url`、`content`、`source`、`retrieved_at` 的结果。缺失来源字段的候选计为 synthetic，不能进入缓存或 MCP 返回值。
 
 ## 输入完整性
 
 | bench | 路径 | 存在 | 判定摘要 |
 |---|---|---|---|
 | reader | /tmp/jina-local-bench-reader.json | ✅ | PASS: jina 远端因余额不足(402)不可用，本地 100% 成功且性能达标，可替代 |
-| search | /tmp/jina-local-bench-search.json | ✅ | PASS: jina 远端因余额不足(402)不可用，本地 100% 成功且性能达标，可替代 |
+| search | /tmp/jina-local-bench-search.json | 需重测 | 旧结果可能含未标记来源的缓存或伪造候选，不能作为当前质量结论 |
 | search_deep | /tmp/jina-local-bench-search-deep.json | ✅ | PASS: jina 不可用，本地 hit_rate 100% 达标，覆盖 100%，结构完整，成本0 |
 | reranker | /tmp/jina-local-bench-reranker.json | ✅ | PASS: jina 远端因余额不足(402)不可用，本地 100% 成功且 top1 准确率 100% (4/4) 达 |
 | embeddings | /tmp/jina-local-bench-embeddings.json | ✅ | PASS: jina 远端因余额不足(402)不可用，本地 100% 成功且性能达标，可替代 |

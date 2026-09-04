@@ -104,11 +104,6 @@ services:
     environment:
       SEARXNG_URL: http://search:8080
     restart: 'no'
-    healthcheck:
-      test: ["CMD", "/search-fetcher"]
-      interval: 30s
-      timeout: 5s
-      retries: 1
   search-core:
     build: ./search-core
     profiles: ["full", "search"]

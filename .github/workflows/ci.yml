@@ -10,6 +10,23 @@ permissions:
   contents: read
 
 jobs:
+  native:
+    name: Native search services
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+      - name: Test Go fetcher
+        run: cd search-fetcher && go test ./...
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test Rust search core
+        run: cargo test --manifest-path search-core/Cargo.toml
+
   tests:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
