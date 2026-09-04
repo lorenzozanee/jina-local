@@ -2,6 +2,10 @@
 
 > 该文档记录确定性契约验证和历史运行记录，不把历史 PASS、余额错误、合成样本或 fallback 可用性当作当前搜索质量结论。
 
+## 总体判定
+
+当前文档只记录可复现的契约、评估边界和验证命令；历史质量、成功率、`PASS` 或 `TODO` 结论均不作为当前判定。
+
 ## 当前判定
 
 - Search 后端只接受带 `title`、`url`、`content`、`source`、`retrieved_at` 的真实候选。
@@ -34,6 +38,33 @@ CI 只运行无网络的纯评估器和契约测试。Go/Rust 服务测试与 Co
 | live benchmark | 版本化语料上的 provenance、MRR、nDCG@5、source coverage | 无可比账户和条件下的 Jina/Firecrawl/Exa 质量比较 |
 
 官方服务质量比较保持未测，除非双方使用相同输入、时间窗口、模型/版本、网络、缓存和有效账户条件。成本、离线和延迟也应分别报告，不能由一次 PASS 推导替代结论。
+
+## 多层次评测体系
+
+### L1 工具级（22 工具）
+
+- 工具：`primer`、`read_url`、`capture_screenshot_url`、`guess_datetime_url`、`search_web`、`search_web_deep`、`search_arxiv`、`search_ssrn`、`search_images`、`search_jina_blog`、`search_bibtex`、`expand_query`、`parallel_read_url`、`parallel_search_web`、`parallel_search_arxiv`、`parallel_search_ssrn`、`sort_by_relevance`、`classify_text`、`deduplicate_strings`、`deduplicate_images`、`extract_pdf`、`embeddings`。
+- 范围：规范 MCP 工具的接口、字段和调用契约。
+- 确定性验证：`python -m pytest tests/test_mcp_compatibility.py tests/test_gateway_contract.py -q`。
+- `22/22`、全兼容和任何工具质量结果均不在本节作历史或当前声明。
+
+### L2 维度级（5 维度雷达图）
+
+- 范围：延迟、相关性、成功率、成本、离线可用性五个评估维度及雷达展示。
+- 确定性验证：`python -m pytest tests/test_bench_full.py tests/test_bench_levels.py -q`。
+- `5/5`、`9.74`、`9.2` 与 `可替代且性能≥jina` 仅作为禁止复述的历史字符串，不作为当前结论；在线质量须由 Live Search 评估提供。
+
+### L3 系统级
+
+- 范围：pytest、MCP 初始化与工具调用、全局配置和 Compose 配置。
+- 确定性验证：`python -m pytest tests/ -q`、`go test ./...`、`cargo test --manifest-path search-core/Cargo.toml`、`docker compose --env-file .env.example config --quiet`。
+- 测试数量和 `PASS` 状态以本次运行输出为准，不保留历史 `125` 测试或通过声明。
+
+### L4 硬件级
+
+- 范围：GPU 显存、并发参数和空间占用。
+- 确定性验证：检查 [`docs/gpu-optimization.md`](gpu-optimization.md)、[`docs/space-optimization.md`](space-optimization.md) 及 `/tmp/jina-local-bench-space.json`；硬件测量需在目标部署中单独运行。
+- 本层不声明历史 RTX 5070、12GB、5GB 或 PASS 结果。
 
 ## 相关命令
 
